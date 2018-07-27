@@ -1,3 +1,9 @@
 [submodule "common"]
 	path = common
 	url = https://github.com/score-p/scorep_plugin_common.git
+[submodule "extern/scorep_plugin_cxx_wrapper"]
+	path = extern/scorep_plugin_cxx_wrapper
+	url = https://github.com/score-p/scorep_plugin_cxx_wrapper
+[submodule "extern/mosquitto-1.5"]
+	path = extern/mosquitto-1.5
+	url = https://github.com/eclipse/mosquitto.git

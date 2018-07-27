@@ -32,7 +32,9 @@
 
 /* #include </usr/include/c++/5/string> */
 #include <string>
+#include <scorep/plugin/plugin.hpp>
 
+namespace spp = scorep::plugin::policy;
 
 
 class examon_sync_metric {
@@ -77,10 +79,51 @@ public:
 
 };
 
-class x86_energy_sync_plugin
-: public scorep::plugin::base<x86_energy_sync_plugin, spp::per_thread, spp::sync_strict,
-                              spp::scorep_clock, spp::synchronize, x86_energy_sync_object_id>
+template <typename T, typename Policies>
+using examon_sync_object_id = spp::object_id<examon_sync_metric, T, Policies>;
+
+class examon_sync_plugin
+: public scorep::plugin::base<examon_sync_plugin, spp::per_thread, spp::sync_strict,
+                              spp::scorep_clock, spp::synchronize, examon_sync_object_id>
 {
+	/* TODO: write contstructor and destructor */
+	examon_sync_plugin()
+	{
+		/* TODO: Do constructor stuff */
+	}
+	~examon_sync_plugin()
+	{
+		/* TODO: Do destructor stuff */
+	}
+	void add_metric(x86_energy_sync_metric& m);
+	 /** Will be called for every event in by the measurement environment.
+	   * You may or may not give it a value here.
+	   *
+	   * @param m contains the sored metric informations
+	   * @param proxy get and save the results
+	   *
+	   * NOTE: In this implemenation we use a few assumptions:
+	   * * scorep calls at every event all metrics
+	   * * this metrics are called everytime in the same order
+	   **/
+	template <typename P>
+	void get_current_value(x86_energy_sync_metric& m, P& proxy);
+	/** function to determine the responsible process for x86_energy
+	  *
+	  * If there is no MPI communication, the x86_energy communication is PER_PROCESS,
+	  * so Score-P cares about everything.
+	  * If there is MPI communication and the plugin is build with -DHAVE_MPI,
+	  * we are grouping all MPI_Processes according to their hostname hash.
+	  * Then we select rank 0 to be the responsible rank for MPI communication.
+	  *
+	  * @param is_responsible the Score-P responsibility
+	  * @param sync_mode sync mode, i.e. SCOREP_METRIC_SYNCHRONIZATION_MODE_BEGIN for non MPI
+	  *              programs and SCOREP_METRIC_SYNCHRONIZATION_MODE_BEGIN_MPP for MPI program.
+	  *              Does not deal with SCOREP_METRIC_SYNCHRONIZATION_MODE_END
+	  */
+	void synchronize(bool is_responsible, SCOREP_MetricSynchronizationMode sync_mode);
 };
+
+SCOREP_METRIC_PLUGIN_CLASS(examon_sync_plugin, "examon_sync")
 
 
