@@ -32,82 +32,92 @@
 
 /* #include </usr/include/c++/5/string> */
 #include <string>
+#include <vector>
 #include <scorep/plugin/plugin.hpp>
+#include <scorep/plugin/util/matcher.hpp>
 
 namespace spp = scorep::plugin::policy;
 
 
-class examon_sync_metric {
-private:
-	std::string mname;
-	std::string mfull_name;
-	std::string mquantity;
-	int msensor;
-	int mnode;
-public:
-    /* dummy constructor */
-	examon_sync_metric(const std::string full_name, const std::string name, const int sensor, const int node, const std::string quantity):
-		mfull_name(full_name), mname(name), msensor(sensor), mnode(node), mquantity(quantity)
-    {
-    }
-
-    /* getter functions */
-    std::string name() const
-    {
-        return mname;
-    }
-
-    std::string full_name() const
-    {
-        return mfull_name;
-    }
-
-    int sensor() const
-    {
-        return msensor;
-    }
-
-    int node() const
-    {
-        return mnode;
-    }
-
-    std::string quantity() const
-    {
-        return mquantity;
-    }
-
-};
-
-template <typename T, typename Policies>
-using examon_sync_object_id = spp::object_id<examon_sync_metric, T, Policies>;
 
 class examon_sync_plugin
-: public scorep::plugin::base<examon_sync_plugin, spp::per_thread, spp::sync_strict,
-                              spp::scorep_clock, spp::synchronize, examon_sync_object_id>
+: public scorep::plugin::base<examon_sync_plugin, spp::per_host, spp::sync,
+                              spp::scorep_clock, spp::synchronize>
 {
+private:
+	std::vector<std::string> metricNames;
+	std::vector<std::int32_t> metricIds;
+	std::int32_t put_metric(std::string metric)
+	{
+		std::int32_t biggestInt = -1;
+		for(int i = 0; i < metricIds.size(); ++i)
+		{
+			if(metricIds[i] > biggestInt)
+			{
+				biggestInt = metricIds[i];
+			}
+		}
+        std::int32_t newId = biggestInt + 1;
+        metricIds.push_back(newId);
+        metricNames.push_back(metric);
+
+        return newId;
+	}
+public:
 	/* TODO: write contstructor and destructor */
 	examon_sync_plugin()
 	{
 		/* TODO: Do constructor stuff */
+		/* TODO: initiate connection to mosquitto */
+		/*
+		struct mosq_config cfg;
+		*/
 	}
 	~examon_sync_plugin()
 	{
 		/* TODO: Do destructor stuff */
+		/* TODO: close connection to mosquitto */
 	}
-	void add_metric(x86_energy_sync_metric& m);
+    /* return matching properties */
+	std::vector<scorep::plugin::metric_property> get_metric_properties(const std::string& metric_parse)
+	{
+      scorep::plugin::util::matcher myMatcher = scorep::plugin::util::matcher(metric_parse);
+      std::vector<scorep::plugin::metric_property> foundMatches = std::vector<scorep::plugin::metric_property>();
+      if(myMatcher("tsc") || myMatcher("Joule") || myMatcher("Watt"))
+      {
+    	  scorep::plugin::metric_property prop = scorep::plugin::metric_property("Joules", "Used energy in Joules", "J");
+    	  foundMatches.push_back(prop);
+      }
+
+      return foundMatches;
+	}
+/* receive metrics here, register them internally with a std::int32_t, which will be later used by score-p to reference the metric here */
+	int32_t add_metric(const std::string& metric_name)
+	{
+      if(metric_name == "Joule"
+      || metric_name == "joule"
+	  || metric_name == "tsc")
+      {
+    	  return put_metric("tsc");
+      }
+
+      return 0; // 0 means failure, I guess
+	}
+
+
 	 /** Will be called for every event in by the measurement environment.
 	   * You may or may not give it a value here.
 	   *
-	   * @param m contains the sored metric informations
+	   * @param m contains the stored metric informations
 	   * @param proxy get and save the results
 	   *
-	   * NOTE: In this implemenation we use a few assumptions:
-	   * * scorep calls at every event all metrics
-	   * * this metrics are called everytime in the same order
 	   **/
-	template <typename P>
-	void get_current_value(x86_energy_sync_metric& m, P& proxy);
+	/* get_current_value is the strict variant, value is written to &proxy */
+	template <class Proxy> bool get_optional_value(std::int32_t id, Proxy& p)
+	{
+	  /* TODO: do something */
+      return false;
+	}
 	/** function to determine the responsible process for x86_energy
 	  *
 	  * If there is no MPI communication, the x86_energy communication is PER_PROCESS,
@@ -121,7 +131,10 @@ class examon_sync_plugin
 	  *              programs and SCOREP_METRIC_SYNCHRONIZATION_MODE_BEGIN_MPP for MPI program.
 	  *              Does not deal with SCOREP_METRIC_SYNCHRONIZATION_MODE_END
 	  */
-	void synchronize(bool is_responsible, SCOREP_MetricSynchronizationMode sync_mode);
+	void synchronize(bool is_responsible, SCOREP_MetricSynchronizationMode sync_mode)
+	{
+      /* TODO: Do something */
+	}
 };
 
 SCOREP_METRIC_PLUGIN_CLASS(examon_sync_plugin, "examon_sync")
