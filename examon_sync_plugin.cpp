@@ -35,6 +35,11 @@
 #include <vector>
 #include <scorep/plugin/plugin.hpp>
 #include <scorep/plugin/util/matcher.hpp>
+extern "C"
+{
+#include <mosquitto.h>
+#include <client_shared.h>
+}
 
 namespace spp = scorep::plugin::policy;
 
@@ -69,14 +74,76 @@ public:
 	{
 		/* TODO: Do constructor stuff */
 		/* TODO: initiate connection to mosquitto */
-		/*
+
 		struct mosq_config cfg;
-		*/
+		memset(&cfg, 0, sizeof(struct mosq_config));
+
+/* code from mosquitto_sub
+		rc = client_config_load(&cfg, CLIENT_SUB, argc, argv);
+		if(rc){
+			client_config_cleanup(&cfg);
+		}
+		mosquitto_lib_init();
+
+		if(client_id_generate(&cfg, "mosqsub")){
+			return 1;
+		}
+
+		mosq = mosquitto_new(cfg.id, cfg.clean_session, &cfg);
+		if(!mosq){
+			switch(errno){
+				case ENOMEM:
+					if(!cfg.quiet) fprintf(stderr, "Error: Out of memory.\n");
+					break;
+				case EINVAL:
+					if(!cfg.quiet) fprintf(stderr, "Error: Invalid id and/or clean_session.\n");
+					break;
+			}
+			mosquitto_lib_cleanup();
+			return 1;
+		}
+		if(client_opts_set(mosq, &cfg)){
+			return 1;
+		}
+
+		if(cfg.debug){
+			mosquitto_log_callback_set(mosq, my_log_callback);
+			mosquitto_subscribe_callback_set(mosq, my_subscribe_callback);
+		}
+		mosquitto_connect_with_flags_callback_set(mosq, my_connect_callback);
+		mosquitto_message_callback_set(mosq, my_message_callback);
+
+		rc = client_connect(mosq, &cfg);
+		if(rc) return rc;
+
+	#ifndef WIN32
+		sigact.sa_handler = my_signal_handler;
+		sigemptyset(&sigact.sa_mask);
+		sigact.sa_flags = 0;
+
+		if(sigaction(SIGALRM, &sigact, NULL) == -1){
+			perror("sigaction");
+			return 1;
+		}
+
+		if(cfg.timeout){
+			alarm(cfg.timeout);
+		}
+	#endif
+
+		rc = mosquitto_loop_forever(mosq, -1, 1);
+*/
+
+
 	}
 	~examon_sync_plugin()
 	{
 		/* TODO: Do destructor stuff */
 		/* TODO: close connection to mosquitto */
+		/*
+		mosquitto_destroy(mosq);
+		mosquitto_lib_cleanup();
+		*/
 	}
     /* return matching properties */
 	std::vector<scorep::plugin::metric_property> get_metric_properties(const std::string& metric_parse)
