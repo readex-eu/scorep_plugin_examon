@@ -39,10 +39,12 @@ extern "C"
 {
 #include <mosquitto.h>
 #include <client_shared.h>
+#include <loop.c>
 }
 
-namespace spp = scorep::plugin::policy;
 
+
+namespace spp = scorep::plugin::policy;
 
 
 class examon_sync_plugin
@@ -50,6 +52,8 @@ class examon_sync_plugin
                               spp::scorep_clock, spp::synchronize>
 {
 private:
+	bool valid_connection = false;
+	struct mosquitto *mosq = NULL;
 	std::vector<std::string> metricNames;
 	std::vector<std::int32_t> metricIds;
 	std::int32_t put_metric(std::string metric)
@@ -68,82 +72,113 @@ private:
 
         return newId;
 	}
+	static examon_sync_plugin* globalSelf; /* TODO: MAKE THIS PER HOST */
 public:
-	/* TODO: write contstructor and destructor */
 	examon_sync_plugin()
 	{
-		/* TODO: Do constructor stuff */
-		/* TODO: initiate connection to mosquitto */
+		/* initiate connection to mosquitto */
+		globalSelf = this;
 
 		struct mosq_config cfg;
 		memset(&cfg, 0, sizeof(struct mosq_config));
 
-/* code from mosquitto_sub
-		rc = client_config_load(&cfg, CLIENT_SUB, argc, argv);
+		std::string topic ("+/+/+/+/+/+/+");
+		int argc = 3;
+		char **argv = (char **) malloc(sizeof(char *) * 3);
+		argv[0] = strdup("");
+		argv[1] = strdup("-t");
+		argv[2] = strdup(topic.c_str());
+
+/* code from mosquitto_sub */
+		int rc = client_config_load(&cfg, CLIENT_SUB, argc, argv);
 		if(rc){
 			client_config_cleanup(&cfg);
 		}
+
 		mosquitto_lib_init();
 
-		if(client_id_generate(&cfg, "mosqsub")){
-			return 1;
-		}
+		if(!client_id_generate(&cfg, "mosqsub")) {
+			mosq = mosquitto_new(cfg.id, cfg.clean_session, &cfg);
 
-		mosq = mosquitto_new(cfg.id, cfg.clean_session, &cfg);
-		if(!mosq){
-			switch(errno){
-				case ENOMEM:
-					if(!cfg.quiet) fprintf(stderr, "Error: Out of memory.\n");
-					break;
-				case EINVAL:
-					if(!cfg.quiet) fprintf(stderr, "Error: Invalid id and/or clean_session.\n");
-					break;
+			if(!mosq){
+				switch(errno){
+					case ENOMEM:
+						if(!cfg.quiet) fprintf(stderr, "Error: Out of memory.\n");
+						break;
+					case EINVAL:
+						if(!cfg.quiet) fprintf(stderr, "Error: Invalid id and/or clean_session.\n");
+						break;
+				}
+				mosquitto_lib_cleanup();
+				/* here was a return statement */
+			} else if(!client_opts_set(mosq, &cfg)) {
+
+
+				mosquitto_connect_with_flags_callback_set(mosq, callback_connection);
+
+
+				mosquitto_message_callback_set(mosq, callback_message);
+
+				rc = client_connect(mosq, &cfg);
+
+				if(!rc)
+				{
+
+
+					//rc = mosquitto_loop_forever(mosq, -1, 1);
+
+
+					valid_connection = true;
+				}
 			}
-			mosquitto_lib_cleanup();
-			return 1;
 		}
-		if(client_opts_set(mosq, &cfg)){
-			return 1;
-		}
-
-		if(cfg.debug){
-			mosquitto_log_callback_set(mosq, my_log_callback);
-			mosquitto_subscribe_callback_set(mosq, my_subscribe_callback);
-		}
-		mosquitto_connect_with_flags_callback_set(mosq, my_connect_callback);
-		mosquitto_message_callback_set(mosq, my_message_callback);
-
-		rc = client_connect(mosq, &cfg);
-		if(rc) return rc;
-
-	#ifndef WIN32
-		sigact.sa_handler = my_signal_handler;
-		sigemptyset(&sigact.sa_mask);
-		sigact.sa_flags = 0;
-
-		if(sigaction(SIGALRM, &sigact, NULL) == -1){
-			perror("sigaction");
-			return 1;
-		}
-
-		if(cfg.timeout){
-			alarm(cfg.timeout);
-		}
-	#endif
-
-		rc = mosquitto_loop_forever(mosq, -1, 1);
-*/
-
-
 	}
 	~examon_sync_plugin()
 	{
-		/* TODO: Do destructor stuff */
-		/* TODO: close connection to mosquitto */
-		/*
+		/*  close connection to mosquitto */
 		mosquitto_destroy(mosq);
 		mosquitto_lib_cleanup();
-		*/
+
+	}
+	static void callback_connection(struct mosquitto *mosq, void *obj, int result, int flags)
+	{
+      globalSelf->onconnect(mosq, obj, result, flags);
+	}
+	static void callback_message(struct mosquitto *mosq, void *obj, const struct mosquitto_message *message)
+	{
+      globalSelf->onmessage(mosq, obj, message);
+	}
+	void onmessage(struct mosquitto *mosq, void *obj, const struct mosquitto_message *message)
+	{
+		assert(obj);
+		struct mosq_config *cfg = (struct mosq_config *)obj;
+		printf("%s ", message->topic);
+		fwrite(message->payload, 1, message->payloadlen, stdout);
+		if(cfg->eol){
+			printf("\n");
+		}
+	}
+	void onconnect(struct mosquitto *mosq, void *obj, int result, int flags)
+	{
+		int i;
+		struct mosq_config *cfg;
+
+		assert(obj);
+		cfg = (struct mosq_config *)obj;
+
+		if(!result){
+			for(i=0; i<cfg->topic_count; i++){
+				mosquitto_subscribe(mosq, NULL, cfg->topics[i], cfg->qos);
+			}
+			for(i=0; i<cfg->unsub_topic_count; i++){
+				mosquitto_unsubscribe(mosq, NULL, cfg->unsub_topics[i]);
+			}
+		}else{
+			if(result && !cfg->quiet){
+				fprintf(stderr, "%s\n", mosquitto_connack_string(result));
+			}
+			mosquitto_disconnect(mosq);
+		}
 	}
     /* return matching properties */
 	std::vector<scorep::plugin::metric_property> get_metric_properties(const std::string& metric_parse)
@@ -203,6 +238,8 @@ public:
       /* TODO: Do something */
 	}
 };
+
+
 
 SCOREP_METRIC_PLUGIN_CLASS(examon_sync_plugin, "examon_sync")
 

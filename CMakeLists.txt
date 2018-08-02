@@ -21,6 +21,7 @@ add_library(examon_sync_plugin SHARED examon_sync_plugin)
 target_link_libraries(examon_sync_plugin PUBLIC scorep-plugin-cxx)
 target_include_directories(examon_sync_plugin PUBLIC extern/mosquitto-1.5/lib)
 target_include_directories(examon_sync_plugin PUBLIC extern/mosquitto-1.5/client)
+target_include_directories(examon_sync_plugin PUBLIC extern/mosquitto-1.5)
 
 #target_include_directories(examon_sync_plugin PUBLIC include)
 #set(CMAKE_CXX_COMPILER /usr/bin/gcc -std=c++14)
