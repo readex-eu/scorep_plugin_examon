@@ -22,13 +22,23 @@ add_library(examon_sync_plugin SHARED examon_sync_plugin)
 # taken from the corresponding wiki
 target_link_libraries(examon_sync_plugin PRIVATE Scorep::scorep-plugin-cxx)
 
-target_include_directories(examon_sync_plugin PUBLIC extern/scorep_plugin_cxx_wrapper/include)
+# try linking mosquitto
+#target_link_libraries(examon_sync_plugin PRIVATE extern/mosquitto-1.5/cpp/libmosquittopp.so)
+target_link_libraries(examon_sync_plugin PRIVATE libmosquitto)
+target_link_libraries(examon_sync_plugin PRIVATE /home/jitschin/git/scorep_plugin_examon/extern/mosquitto-1.5/cpp/libmosquittopp)
+#target_link_libraries(examon_sync_plugin PRIVATE extern/mosquitto-1.5/lib)
+#set_property(TARGET examon_sync_plugin PROPERTY IMPORTED_LOCATION "extern/mosquitto-1.5/cpp/libmosquittopp.so")
+#set_property(TARGET examon_sync_plugin PROPERTY IMPORTED_LOCATION "extern/mosquitto-1.5/libmosquitto.so")
+
+
+#target_include_directories(examon_sync_plugin PUBLIC extern/scorep_plugin_cxx_wrapper/include)
 target_include_directories(examon_sync_plugin PUBLIC extern/mosquitto-1.5/lib)
 target_include_directories(examon_sync_plugin PUBLIC extern/mosquitto-1.5/lib/cpp)
 target_include_directories(examon_sync_plugin PUBLIC extern/mosquitto-1.5/client)
-target_include_directories(examon_sync_plugin PUBLIC extern/mosquitto-1.5)
+#target_include_directories(examon_sync_plugin PUBLIC extern/mosquitto-1.5/lib)
 
-SET( CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -fpermissive" )
+# would only be required if using c-style malloc without casting
+#SET( CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -fpermissive" )
 
 
 #target_include_directories(examon_sync_plugin PUBLIC include)
