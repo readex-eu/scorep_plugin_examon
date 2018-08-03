@@ -35,18 +35,46 @@
 #include <vector>
 #include <scorep/plugin/plugin.hpp>
 #include <scorep/plugin/util/matcher.hpp>
+/* only for debugging */
+#include <iostream>
+
 extern "C"
 {
 #include <mosquitto.h>
+#include <mosquitto.c>
 #include <client_shared.h>
+#include <callbacks.c>
+#include <util_mosq.h>
+#include <util_mosq.c>
+#include <connect.c>
 #include <loop.c>
+#include <send_connect.c>
+#include <packet_mosq.c>
+#include <net_mosq.h>
+#include <net_mosq.c>
+#include <memory_mosq.c>
+#include <send_disconnect.c>
+#include <send_mosq.c>
+#include <logging_mosq.c>
+#include <read_handle.c>
+#include <handle_pubrel.c>
+#include <handle_connack.c>
+#include <messages_mosq.c>
+#include <handle_suback.c>
+#include <handle_unsuback.c>
+#include <handle_ping.c>
+#include <handle_publish.c>
+#include <utf8_mosq.c>
+#include <options.c>
 }
+#include <cpp/mosquittopp.h>
+#include <cpp/mosquittopp.cpp>
 
 
 
 namespace spp = scorep::plugin::policy;
 
-
+/* we coould inherit from lib/cpp/mosquitto.h and have a much easier implementation here... */
 class examon_sync_plugin
 : public scorep::plugin::base<examon_sync_plugin, spp::per_host, spp::sync,
                               spp::scorep_clock, spp::synchronize>
@@ -77,7 +105,7 @@ public:
 	examon_sync_plugin()
 	{
 		/* initiate connection to mosquitto */
-		globalSelf = this;
+//		examon_sync_plugin::globalSelf = this;
 
 		struct mosq_config cfg;
 		memset(&cfg, 0, sizeof(struct mosq_config));
@@ -92,7 +120,9 @@ public:
 /* code from mosquitto_sub */
 		int rc = client_config_load(&cfg, CLIENT_SUB, argc, argv);
 		if(rc){
-			client_config_cleanup(&cfg);
+			// can't do the following
+			// TODO: do manual cleanup
+			//client_config_cleanup(&cfg);
 		}
 
 		mosquitto_lib_init();
@@ -110,8 +140,7 @@ public:
 						break;
 				}
 				mosquitto_lib_cleanup();
-				/* here was a return statement */
-			} else if(!client_opts_set(mosq, &cfg)) {
+			} else { // if(!client_opts_set(mosq, &cfg)) {
 
 
 				mosquitto_connect_with_flags_callback_set(mosq, callback_connection);
@@ -142,11 +171,11 @@ public:
 	}
 	static void callback_connection(struct mosquitto *mosq, void *obj, int result, int flags)
 	{
-      globalSelf->onconnect(mosq, obj, result, flags);
+//      examon_sync_plugin::globalSelf->onconnect(mosq, obj, result, flags);
 	}
 	static void callback_message(struct mosquitto *mosq, void *obj, const struct mosquitto_message *message)
 	{
-      globalSelf->onmessage(mosq, obj, message);
+//      examon_sync_plugin::globalSelf->onmessage(mosq, obj, message);
 	}
 	void onmessage(struct mosquitto *mosq, void *obj, const struct mosquitto_message *message)
 	{
@@ -183,6 +212,7 @@ public:
     /* return matching properties */
 	std::vector<scorep::plugin::metric_property> get_metric_properties(const std::string& metric_parse)
 	{
+      std::cout << "get_metric_properties(\"" << metric_parse << "\")"<< std::endl;
       scorep::plugin::util::matcher myMatcher = scorep::plugin::util::matcher(metric_parse);
       std::vector<scorep::plugin::metric_property> foundMatches = std::vector<scorep::plugin::metric_property>();
       if(myMatcher("tsc") || myMatcher("Joule") || myMatcher("Watt"))
@@ -196,6 +226,8 @@ public:
 /* receive metrics here, register them internally with a std::int32_t, which will be later used by score-p to reference the metric here */
 	int32_t add_metric(const std::string& metric_name)
 	{
+      //DEBUG
+	  std::cout << "add_metric(\"" << metric_name << "\")"<< std::endl;
       if(metric_name == "Joule"
       || metric_name == "joule"
 	  || metric_name == "tsc")
