@@ -39,12 +39,17 @@
 #include <scorep/plugin/util/matcher.hpp>
 /* only for debugging */
 #include <iostream>
+/* use phtread */
+#include <pthread.h>
 
 
 #include <mosquittopp.h>
 
 
 namespace spp = scorep::plugin::policy;
+
+
+
 
 /* we coould inherit from lib/cpp/mosquitto.h and have a much easier implementation here... */
 class examon_sync_plugin
@@ -80,18 +85,24 @@ public:
 		int port = 1883; // default port
 
 	    int keepalive = 60;
+
 	    mosqpp::lib_init();
 
 		connect(host, port, keepalive);
 
-        /* it might be necessary to put this in a pthread */
-		this->loop_forever();
+        pthread_t thread_id; /* TODO: store the thread id */
+        pthread_create(&thread_id, NULL, &pthread_loop, this);
 	}
 	~examon_sync_plugin()
 	{
 		/*  close connection to mosquitto */
 		mosqpp::lib_cleanup();
 
+	}
+	static void* pthread_loop(void* arg)
+	{
+		examon_sync_plugin* myObj = (examon_sync_plugin*) arg;
+		myObj->loop_forever();
 	}
 	void on_connect(int rc)
 	{

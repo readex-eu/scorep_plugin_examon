@@ -25,7 +25,8 @@ target_link_libraries(examon_sync_plugin PRIVATE Scorep::scorep-plugin-cxx)
 # try linking mosquitto
 #target_link_libraries(examon_sync_plugin PRIVATE extern/mosquitto-1.5/cpp/libmosquittopp.so)
 target_link_libraries(examon_sync_plugin PRIVATE libmosquitto)
-target_link_libraries(examon_sync_plugin PRIVATE /home/jitschin/git/scorep_plugin_examon/extern/mosquitto-1.5/cpp/libmosquittopp)
+# TODO: Make this better
+target_link_libraries(examon_sync_plugin PRIVATE /home/jitschin/git/scorep_plugin_examon/build/extern/mosquitto-1.5/lib/cpp/libmosquittopp.so)
 #target_link_libraries(examon_sync_plugin PRIVATE extern/mosquitto-1.5/lib)
 #set_property(TARGET examon_sync_plugin PROPERTY IMPORTED_LOCATION "extern/mosquitto-1.5/cpp/libmosquittopp.so")
 #set_property(TARGET examon_sync_plugin PROPERTY IMPORTED_LOCATION "extern/mosquitto-1.5/libmosquitto.so")
