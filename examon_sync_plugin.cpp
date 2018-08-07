@@ -41,7 +41,8 @@
 #include <iostream>
 /* use phtread */
 #include <pthread.h>
-
+/* for gethostname() */
+#include <unistd.h>
 
 #include <mosquittopp.h>
 
@@ -77,18 +78,55 @@ private:
 
         return newId;
 	}
+	std::string topicMaskPrefix = "/node/";
+	std::string topicMaskPostfix = "/plugin/pmu_pub/chnl";
+	std::string topicBase = "";
+	std::string topicCmd = "";
+	std::string topicErgPkg = "";
+	std::string topicErgUnit = "";
+	char* hostname = NULL;
+	char* examonHost = NULL;
+	char* connectHost = NULL;
+	char* configChannel = NULL;
+	char* intervalDuration = NULL;
+	double lastValue = 0;
+	double lastTimestamp = 0;
+	double ergUnit = -1;
 public:
 	examon_sync_plugin()
 	{
-		const char *id;//dunno what this is for
-		const char *host = (char*) "localhost";
 		int port = 1883; // default port
-
 	    int keepalive = 60;
+
+	    hostname = (char *) malloc(1024);
+	    int rc = gethostname(hostname, 1024);
+	    if(rc) {
+        	fprintf(stderr, "Could not read hostname of this host, abort imminent.\n");
+        	exit(0);
+	    }
+	    connectHost =      getenv("SCOREP_METRIC_EXAMON_SYNC_PLUGIN_BROKER");
+	    configChannel =    getenv("SCOREP_METRIC_EXAMON_SYNC_PLUGIN_CHANNEL");
+	    intervalDuration = getenv("SCOREP_METRIC_EXAMON_SYNC_PLUGIN_INTERVAL");
+        if(!connectHost)   connectHost = (char*) "localhost";
+        if(!configChannel) configChannel = (char*) "org/antarex/cluster/testcluster";
+        if(!intervalDuration) intervalDuration = (char *) "0.3";
+        else {
+            float dummyVal;
+            if(1 != sscanf(intervalDuration, "%f", &dummyVal))
+            {
+            	fprintf(stderr, "Could not parse intervalDuration of \"%s\", not a floating point number\n", intervalDuration);
+            }
+       	}
+
+	    topicBase = configChannel + topicMaskPrefix + hostname + topicMaskPostfix;
+	    topicCmd = topicBase + "/cmd";
+	    topicErgPkg = topicBase + "/data/cpu/0/erg_pkg";
+	    topicErgUnit = topicBase + "/data/cpu/0/erg_units";
+
 
 	    mosqpp::lib_init();
 
-		connect(host, port, keepalive);
+		connect( connectHost, port, keepalive);
 
         pthread_t thread_id; /* TODO: store the thread id */
         pthread_create(&thread_id, NULL, &pthread_loop, this);
@@ -108,8 +146,24 @@ public:
 	{
 		printf("Connected with code %d.\n", rc);
 		if(rc == 0){
+
+			// /usr/bin/mosquitto_pub -t testcluster/node/mabus/plugin/pmu_pub/chnl/cmd -m "-s 0.1"
+		    char* intervalStr = (char *) malloc(100);
+		    strcpy(intervalStr, "-s ");
+		    strncpy(intervalStr + 3, intervalDuration, 95);
+			printf("Trying to publish to channel \"%s\", value \"%s\".\n", topicCmd.c_str(), intervalStr);
+			publish(NULL, topicCmd.c_str(), strlen(intervalStr), intervalStr);
+			free(intervalStr);
+
+
+			/* Disregard desired metrics in metricNames */
+			/* TODO: Do heed the specified metrics */
+
 			/* Only attempt to subscribe on a successful connect. */
-			subscribe(NULL, "+/+/+/+/+/+");
+			printf("Trying to subscribe to %s.\n", topicErgPkg.c_str());
+			subscribe(NULL, topicErgPkg.c_str());
+			printf("Trying to subscribe to %s.\n", topicErgUnit.c_str());
+			subscribe(NULL, topicErgUnit.c_str());
 		}
 	}
 	void on_message(const struct mosquitto_message *message)
@@ -120,11 +174,46 @@ public:
 		memset(buf, 0, 101*sizeof(char));
 		/* Copy N-1 bytes to ensure always 0 terminated. */
 		memcpy(buf, message->payload, 100*sizeof(char));
-		printf("Received message, topic: %s, payload: %s\n", message->topic, buf);
+		//printf("Received message, topic: %s, payload: %s\n", message->topic, buf);
+
+		if(0 == strcmp(topicErgPkg.c_str(), message->topic))
+		{
+			if(2 < message->payloadlen)
+			{
+				double readValue;
+				double readTimestamp;
+				double deltaTimestamp = 0;
+				double deltaValue = 0;
+				if(2 == sscanf((char *) message->payload, "%lf;%lf", &readValue, &readTimestamp))
+				{
+					deltaTimestamp = readTimestamp - lastTimestamp;
+					deltaValue = readValue - lastValue;
+
+					lastValue = readValue;
+					lastTimestamp = readTimestamp;
+
+					if(-1 < ergUnit)
+					{
+						printf("Adjusted Energy: %lf Joules\n", deltaValue / deltaTimestamp / ergUnit);
+					}
+
+				}
+		    }
+		} else if(0 == strcmp(topicErgUnit.c_str(), message->topic))
+		{
+			if(1 == sscanf((char *) message->payload, "%lf;%*f", &ergUnit))
+			{
+				unsubscribe(NULL, topicErgUnit.c_str());
+			}
+		}
 	}
 	void on_subscribe(int mid, int qos_count, const int *granted_qos)
 	{
 		printf("Subscription succeeded.\n");
+	}
+	void on_unsubscribe(int mid)
+	{
+		printf("unsubscribed.\n");
 	}
 
 
