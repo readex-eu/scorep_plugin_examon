@@ -105,7 +105,7 @@ private:
 	bool trackErgUnit = false;
 	bool isConnected = false;
 	bool isAlive = true;
-	bool constructorDone = false;
+	bool subscribedToMetrics = false;
 public:
 	examon_sync_plugin()
 	{
@@ -145,7 +145,6 @@ public:
 		isAlive = true;
         pthread_t thread_id; /* TODO: store the thread id */
         pthread_create(&thread_id, NULL, &pthread_loop, this);
-        constructorDone = true; //DEBUG
 	}
 	~examon_sync_plugin()
 	{
@@ -162,25 +161,17 @@ public:
 	{
 		examon_sync_plugin* myObj = (examon_sync_plugin*) arg;
 
-		/* Only attempt to subscribe on a successful connect. */
-		while(!myObj->connected())
-		{
-			printf("W");
-			usleep(2000);
-		}
-		if(myObj->alive())
-		{
-			printf("Trying to subscribe metrics.\n");
-		    myObj->subscribe_the_metrics();
-		    myObj->loop_forever();
-		}
+	    myObj->loop_forever();
+
 	}
 	void subscribe_the_metrics()
 	{
         char* subTopic = (char*) malloc(1001);
 		for(int i = 0; i < metricIds.size(); ++i)
 		{
-            sprintf(subTopic, "%s/data/cpu/+/%s", topicBase.c_str(), metricNames[i].c_str());
+			/* TODO: Make it multi-socket compatible (replace "0" below with "+",
+			 *         also implement logic for receiving multiple values at once */
+            sprintf(subTopic, "%s/data/cpu/0/%s", topicBase.c_str(), metricNames[i].c_str());
             printf("Trying to subscribe to %s.\n", subTopic);
             subscribe(NULL, subTopic);
 		}
@@ -353,11 +344,15 @@ public:
 	    	{
 	    		if(-1 < metricValues[index])
 	    		{
-	    			double calculatedMetric = -1;
-                    if(metricIsEnergy[index]) calculatedMetric = metricDeltas[index] / metricElapsed[index] / ergUnit;
-                    else                      calculatedMetric = metricDeltas[index] / metricElapsed[index];
+	    			double calculatedMetric = 0;
+	    			double timeElapsed = metricElapsed[index];
+	    			if(0 < timeElapsed)
+                    {
+	    				if(metricIsEnergy[index] && -1 < ergUnit) calculatedMetric = metricDeltas[index] / timeElapsed / ergUnit;
+                        else                      calculatedMetric = metricDeltas[index] / timeElapsed;
+                    }
                     p.store(calculatedMetric);
-                    printf("Reported Metric %s: %lf\n", metricNames[index].c_str(), calculatedMetric);
+                    //printf("Reported Metric %s: %lf\n", metricNames[index].c_str(), calculatedMetric);
                     return true;
 	    		}
 	    	}
@@ -381,6 +376,11 @@ public:
 	{
       /* TODO: Do something */
 		printf("synchronize() called\n");
+		if(!subscribedToMetrics)
+		{
+            subscribe_the_metrics();
+            subscribedToMetrics = true;
+		}
 	}
 };
 
