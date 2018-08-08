@@ -62,11 +62,14 @@ private:
 	struct mosquitto *mosq = NULL;
 	std::vector<std::string> metricNames;
 	std::vector<std::int32_t> metricIds;
-	std::vector<std::int64_t> metricValues;
-	std::vector<std::int64_t> metricDeltas;
+	std::vector<double> metricValues;
+	std::vector<double> metricDeltas;
 	std::vector<bool> metricIsEnergy;
-	std::vector<std::int64_t> metricTimestamps;
-	std::vector<std::int64_t> metricElapsed;
+
+	std::vector<bool> metricReportDelta;
+	std::vector<double> metricTimestamps;
+	std::vector<double> metricElapsed;
+	std::vector<std::int64_t> metricIterations;
 	std::int32_t put_metric(std::string metric)
 	{
 		std::int32_t biggestInt = 0;
@@ -75,6 +78,13 @@ private:
 		std::int32_t newId = biggestInt + 1;
         metricIds.push_back(newId);
         metricNames.push_back(metric);
+        bool reportDelta = true;
+        if(0 == strncmp("temp", metric.c_str(), 4)
+        || 0 == strncmp("freq", metric.c_str(), 4))
+        {
+        	reportDelta = false;
+        }
+        metricReportDelta.push_back(reportDelta);
         bool isEnergy = false;
         if(0 == strncmp("erg", metric.c_str(), 3)
         && 0 != strncmp("erg_units", metric.c_str(), 9))
@@ -86,6 +96,7 @@ private:
         metricDeltas.push_back(0);
         metricTimestamps.push_back(0);
         metricElapsed.push_back(0);
+        metricIterations.push_back(0);
 
         return newId;
 	}
@@ -119,9 +130,11 @@ public:
         	exit(0);
 	    }
 	    connectHost =      getenv("SCOREP_METRIC_EXAMON_SYNC_PLUGIN_BROKER");
+	    examonHost =       getenv("SCOREP_METRIC_EXAMON_SYNC_PLUGIN_EXAMON_HOST");
 	    configChannel =    getenv("SCOREP_METRIC_EXAMON_SYNC_PLUGIN_CHANNEL");
 	    intervalDuration = getenv("SCOREP_METRIC_EXAMON_SYNC_PLUGIN_INTERVAL");
         if(!connectHost)   connectHost = (char*) "localhost";
+        if(!examonHost)    examonHost = hostname;
         if(!configChannel) configChannel = (char*) "org/antarex/cluster/testcluster";
         if(!intervalDuration) intervalDuration = (char *) "0.3";
         else {
@@ -132,7 +145,7 @@ public:
             }
        	}
 
-	    topicBase = configChannel + topicMaskPrefix + hostname + topicMaskPostfix;
+	    topicBase = configChannel + topicMaskPrefix + examonHost + topicMaskPostfix;
 	    topicCmd = topicBase + "/cmd";
 	    topicErgUnits = topicBase + "/data/cpu/0/erg_units";
 
@@ -237,6 +250,7 @@ public:
 			    if( 2 == valuesRead )
 			    {
 				    // - calculate delta
+			    	bool reportDelta = -1 == metricValues[i];
 			    	double delta = readValue - metricValues[i];
 			    	metricDeltas[i] = delta;
 			    	delta = readTimestamp - metricTimestamps[i];
@@ -245,6 +259,8 @@ public:
      				// - put value in metricValues
 			    	metricValues[i] = readValue;
 			    	metricTimestamps[i] = readTimestamp;
+			    	++metricIterations[i];
+			    	printf("read metric %9s: %0.4lf, metricValues[%d]= %0.4lf\n", metricNames[i].c_str(), readValue, i, metricValues[i]);
 			    }
 				break;
 			}
@@ -290,23 +306,40 @@ public:
     		  char* buf = (char*) malloc(101);
     		  sprintf(buf, "CPU Socket 0 value \"%79s\"", (*iter).c_str());
     		  buf[100] = '\0';
+    		  bool isAbsolute = false;
+    		  bool accumulatedStart = true;
     		  char* unit = (char*) "";
     		  if(0 == strncmp("temp", (*iter).c_str(), 4))
     		  {
     			  unit = (char*) "C";
+    			  isAbsolute = true;
     		  } else if(0 == strncmp("erg", (*iter).c_str(), 3))
      		  {
     			  if(0 != strncmp("erg_units", (*iter).c_str(), 9))
     			  {
         			  unit = (char*) "J";
         			  trackErgUnit = true;
+        			  accumulatedStart = false;
     			  }
     		  } else if(0 == strncmp("freq", (*iter).c_str(), 4))
     		  {
     			  unit = (char*) "Hz";
+    			  isAbsolute = true;
     		  }
     		  scorep::plugin::metric_property prop = scorep::plugin::metric_property(*iter, buf, unit);
-    		  prop.absolute_point();
+    		  if(isAbsolute)
+    		  {
+    		      prop.absolute_last();
+    		  } else
+    		  {
+    			  if(accumulatedStart)
+    			  {
+    			      prop.accumulated_start();
+    			  } else
+    			  {
+    				  prop.accumulated_last();
+    			  }
+    		  }
     		  prop.value_double();
     		  prop.decimal();
     		  foundMatches.push_back(prop);
@@ -344,16 +377,21 @@ public:
 	    	{
 	    		if(-1 < metricValues[index])
 	    		{
-	    			double calculatedMetric = 0;
-	    			double timeElapsed = metricElapsed[index];
-	    			if(0 < timeElapsed)
-                    {
-	    				if(metricIsEnergy[index] && -1 < ergUnit) calculatedMetric = metricDeltas[index] / timeElapsed / ergUnit;
-                        else                      calculatedMetric = metricDeltas[index] / timeElapsed;
-                    }
-                    p.store(calculatedMetric);
-                    //printf("Reported Metric %s: %lf\n", metricNames[index].c_str(), calculatedMetric);
-                    return true;
+    			    if(metricIsEnergy[index]) {
+    			    	if(-1 < ergUnit && 1 < metricIterations[index])
+    			    	{
+    			    		double calculatedMetric = metricValues[index] / metricElapsed[index] / ergUnit;
+    			    		printf("e %8s %0.4lf = %0.4lf / %0.4lf / %0.4lf\n", metricNames[index].c_str(), calculatedMetric, metricValues[index], metricElapsed[index], ergUnit);
+    			    		p.store(calculatedMetric);
+    			    		return true;
+    			    	}
+    			    } else
+    			    {
+    			    	printf("o %8s %0.4lf\n", metricNames[index].c_str(), metricValues[index]);
+    				    p.store(metricValues[index]);
+    				    return true;
+    			    }
+
 	    		}
 	    	}
 	    }
