@@ -78,16 +78,17 @@ private:
 		std::int32_t newId = biggestInt + 1;
         metricIds.push_back(newId);
         metricNames.push_back(metric);
+        char* metricBasename = basename((char*) metric.c_str());
         bool reportDelta = true;
-        if(0 == strncmp("temp", metric.c_str(), 4)
-        || 0 == strncmp("freq", metric.c_str(), 4))
+        if(0 == strncmp("temp", metricBasename, 4)
+        || 0 == strncmp("freq", metricBasename, 4))
         {
         	reportDelta = false;
         }
         metricReportDelta.push_back(reportDelta);
         bool isEnergy = false;
-        if(0 == strncmp("erg", metric.c_str(), 3)
-        && 0 != strncmp("erg_units", metric.c_str(), 9))
+        if(0 == strncmp("erg", metricBasename, 3)
+        && 0 != strncmp("erg_units", metricBasename, 9))
         {
         	isEnergy = true;
         }
@@ -136,8 +137,8 @@ public:
         if(!connectHost)   connectHost = (char*) "localhost";
         if(!examonHost)    examonHost = hostname;
         if(!configChannel) configChannel = (char*) "org/antarex/cluster/testcluster";
-        if(!intervalDuration) intervalDuration = (char *) "0.3";
-        else {
+        if(intervalDuration)
+        {
             float dummyVal;
             if(1 != sscanf(intervalDuration, "%f", &dummyVal))
             {
@@ -184,7 +185,7 @@ public:
 		{
 			/* TODO: Make it multi-socket compatible (replace "0" below with "+",
 			 *         also implement logic for receiving multiple values at once */
-            sprintf(subTopic, "%s/data/cpu/0/%s", topicBase.c_str(), metricNames[i].c_str());
+            sprintf(subTopic, "%s/data/%s", topicBase.c_str(), metricNames[i].c_str());
             printf("Trying to subscribe to %s.\n", subTopic);
             subscribe(NULL, subTopic);
 		}
@@ -197,13 +198,15 @@ public:
 
 			isConnected = true;
 
-			// /usr/bin/mosquitto_pub -t testcluster/node/mabus/plugin/pmu_pub/chnl/cmd -m "-s 0.1"
-		    char* intervalStr = (char *) malloc(100);
-		    strcpy(intervalStr, "-s ");
-		    strncpy(intervalStr + 3, intervalDuration, 95);
-			printf("Trying to publish to channel \"%s\", value \"%s\".\n", topicCmd.c_str(), intervalStr);
-			publish(NULL, topicCmd.c_str(), strlen(intervalStr), intervalStr);
-			free(intervalStr);
+			if(intervalDuration)
+			{
+		        char* intervalStr = (char *) malloc(100);
+		        strcpy(intervalStr, "-s ");
+		        strncpy(intervalStr + 3, intervalDuration, 95);
+			    printf("Trying to publish to channel \"%s\", value \"%s\".\n", topicCmd.c_str(), intervalStr);
+			    publish(NULL, topicCmd.c_str(), strlen(intervalStr), intervalStr);
+			    free(intervalStr);
+			}
 
 
 			/* Disregard desired metrics in metricNames */
@@ -221,48 +224,54 @@ public:
 	}
 	void on_message(const struct mosquitto_message *message)
 	{
-	    char* topicName = basename(message->topic);
-
-		char buf[101];
-
-		//strcmp(message->topic, "channel/name")
-		memset(buf, 0, 101*sizeof(char));
-		/* Copy N-1 bytes to ensure always 0 terminated. */
-		memcpy(buf, message->payload, 100*sizeof(char));
-		//printf("Received message, topic: %s, payload: %s\n", message->topic, buf);
-
-		if(-1 == ergUnit && 0 == strcmp(topicErgUnits.c_str(), message->topic))
+		if(0 == strncmp(message->topic, topicBase.c_str(), topicBase.length()))
 		{
-			if(1 == sscanf((char *) message->payload, "%lf;%*f", &ergUnit))
+			if(-1 == ergUnit && 0 == strcmp(topicErgUnits.c_str(), message->topic))
 			{
-				unsubscribe(NULL, topicErgUnits.c_str());
+				if(1 == sscanf((char *) message->payload, "%lf;%*f", &ergUnit))
+				{
+					unsubscribe(NULL, topicErgUnits.c_str());
+				}
 			}
-		}
 
-		for(int i = 0; i < metricNames.size(); ++i)
-		{
-			if(0 == strcmp(metricNames[i].c_str(), topicName))
+			if(0 == strncmp("/data/", message->topic + topicBase.length(), 6))
 			{
-				// - read out values from payload
-				double readValue = -1;
-			    double readTimestamp = -1;
-			    int valuesRead = sscanf((char*) message->payload, "%lf;%lf", &readValue, &readTimestamp);
-			    if( 2 == valuesRead )
-			    {
-				    // - calculate delta
-			    	bool reportDelta = -1 == metricValues[i];
-			    	double delta = readValue - metricValues[i];
-			    	metricDeltas[i] = delta;
-			    	delta = readTimestamp - metricTimestamps[i];
-			    	metricElapsed[i] = delta;
+				char* topicName = message->topic + topicBase.length() + 6;
 
-     				// - put value in metricValues
-			    	metricValues[i] = readValue;
-			    	metricTimestamps[i] = readTimestamp;
-			    	++metricIterations[i];
-			    	printf("read metric %9s: %0.4lf, metricValues[%d]= %0.4lf\n", metricNames[i].c_str(), readValue, i, metricValues[i]);
-			    }
-				break;
+				for(int i = 0; i < metricNames.size(); ++i)
+				{
+					//TODO: Write metric matching for paths like cpu/+/erg_pkg
+					//                                        or +/+/tsc
+					//        however revoke paths like cpu/0/+
+					//                               or cpu/+/+
+					//                               or +/+/+
+					//use mosqpp::topic_matches_sub(string mask_of_topic, string actual_topic, bool* result) here
+					bool topicMatches = false;
+					mosqpp::topic_matches_sub(metricNames[i].c_str(), topicName, &topicMatches);
+					if(topicMatches)
+					{
+						// - read out values from payload
+						double readValue = -1;
+						double readTimestamp = -1;
+						int valuesRead = sscanf((char*) message->payload, "%lf;%lf", &readValue, &readTimestamp);
+						if( 2 == valuesRead )
+						{
+							// - calculate delta
+							bool reportDelta = -1 == metricValues[i];
+							double delta = readValue - metricValues[i];
+							metricDeltas[i] = delta;
+							delta = readTimestamp - metricTimestamps[i];
+							metricElapsed[i] = delta;
+
+							// - put value in metricValues
+							metricValues[i] = readValue;
+							metricTimestamps[i] = readTimestamp;
+							++metricIterations[i];
+							printf("read metric %9s: %0.4lf, metricValues[%d]= %0.4lf\n", metricNames[i].c_str(), readValue, i, metricValues[i]);
+						}
+						break;
+					}
+				}
 			}
 		}
 	}
@@ -294,59 +303,54 @@ public:
        * C6
        * uclk
        */
+      std::string metricBasename = basename(metric_parse.c_str());
 
-      scorep::plugin::util::matcher myMatcher = scorep::plugin::util::matcher(metric_parse);
       std::vector<scorep::plugin::metric_property> foundMatches = std::vector<scorep::plugin::metric_property>();
-      std::array<std::string, 11> validMetrics = {"tsc", "temp_pkg", "erg_dram", "erg_cores", "erg_pkg", "erg_units", "freq_ref", "C2", "C3", "C6", "uclk"};
-      std::array<std::string, 11>::iterator iter = validMetrics.begin();
-      for(; iter != validMetrics.end(); ++iter)
-      {
-    	  if(myMatcher(*iter))
-    	  {
-    		  char* buf = (char*) malloc(101);
-    		  sprintf(buf, "CPU Socket 0 value \"%79s\"", (*iter).c_str());
-    		  buf[100] = '\0';
-    		  bool isAbsolute = false;
-    		  bool accumulatedStart = true;
-    		  char* unit = (char*) "";
-    		  if(0 == strncmp("temp", (*iter).c_str(), 4))
-    		  {
-    			  unit = (char*) "C";
-    			  isAbsolute = true;
-    		  } else if(0 == strncmp("erg", (*iter).c_str(), 3))
-     		  {
-    			  if(0 != strncmp("erg_units", (*iter).c_str(), 9))
-    			  {
-        			  unit = (char*) "J";
-        			  trackErgUnit = true;
-        			  accumulatedStart = false;
-    			  }
-    		  } else if(0 == strncmp("freq", (*iter).c_str(), 4))
-    		  {
-    			  unit = (char*) "Hz";
-    			  isAbsolute = true;
-    		  }
-    		  scorep::plugin::metric_property prop = scorep::plugin::metric_property(*iter, buf, unit);
-    		  if(isAbsolute)
-    		  {
-    		      prop.absolute_last();
-    		  } else
-    		  {
-    			  if(accumulatedStart)
-    			  {
-    			      prop.accumulated_start();
-    			  } else
-    			  {
-    				  prop.accumulated_last();
-    			  }
-    		  }
-    		  prop.value_double();
-    		  prop.decimal();
-    		  foundMatches.push_back(prop);
 
-    		  free(buf);
-    	  }
-      }
+	  char* buf = (char*) malloc(metric_parse.length() + 17);
+	  sprintf(buf, "Examon metric \"%s\"", metric_parse.c_str());
+	  buf[metric_parse.length() + 16] = '\0';
+	  bool isAbsolute = false;
+	  bool accumulatedStart = true;
+	  char* unit = (char*) "";
+	  if(0 == strncmp("temp", metricBasename.c_str(), 4))
+	  {
+		  unit = (char*) "C";
+		  isAbsolute = true;
+	  } else if(0 == strncmp("erg", metricBasename.c_str(), 3))
+	  {
+		  if(0 != strncmp("erg_units", metricBasename.c_str(), 9))
+		  {
+			  unit = (char*) "J";
+			  trackErgUnit = true;
+			  accumulatedStart = false;
+		  }
+	  } else if(0 == strncmp("freq", metricBasename.c_str(), 4))
+	  {
+		  unit = (char*) "Hz";
+		  isAbsolute = true;
+	  }
+
+	  scorep::plugin::metric_property prop = scorep::plugin::metric_property(metric_parse, buf, unit);
+	  if(isAbsolute)
+	  {
+		  prop.absolute_last();
+	  } else
+	  {
+		  if(accumulatedStart)
+		  {
+			  prop.accumulated_start();
+		  } else
+		  {
+			  prop.accumulated_last();
+		  }
+	  }
+	  prop.value_double();
+	  prop.decimal();
+	  foundMatches.push_back(prop);
+
+	  free(buf);
+
 
       return foundMatches;
 	}
