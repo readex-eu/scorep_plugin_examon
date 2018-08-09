@@ -46,13 +46,11 @@
 
 #include <mosquittopp.h>
 
+#include "examon_metric.cpp"
 
 namespace spp = scorep::plugin::policy;
 
 
-
-
-/* we coould inherit from lib/cpp/mosquitto.h and have a much easier implementation here... */
 class examon_sync_plugin
 : public scorep::plugin::base<examon_sync_plugin, spp::per_host, spp::sync,
                               spp::scorep_clock, spp::synchronize>, public mosqpp::mosquittopp
@@ -60,44 +58,16 @@ class examon_sync_plugin
 private:
 	bool valid_connection = false;
 	struct mosquitto *mosq = NULL;
-	std::vector<std::string> metricNames;
 	std::vector<std::int32_t> metricIds;
-	std::vector<double> metricValues;
-	std::vector<double> metricDeltas;
-	std::vector<bool> metricIsEnergy;
-
-	std::vector<bool> metricReportDelta;
-	std::vector<double> metricTimestamps;
-	std::vector<double> metricElapsed;
-	std::vector<std::int64_t> metricIterations;
-	std::int32_t put_metric(std::string metric)
+    std::vector<examon_metric> metrics;
+    std::int32_t put_metric(std::string metric)
 	{
 		std::int32_t biggestInt = 0;
 		if(0 < metricIds.size()) biggestInt = metricIds[metricIds.size() - 1];
 
 		std::int32_t newId = biggestInt + 1;
         metricIds.push_back(newId);
-        metricNames.push_back(metric);
-        char* metricBasename = basename((char*) metric.c_str());
-        bool reportDelta = true;
-        if(0 == strncmp("temp", metricBasename, 4)
-        || 0 == strncmp("freq", metricBasename, 4))
-        {
-        	reportDelta = false;
-        }
-        metricReportDelta.push_back(reportDelta);
-        bool isEnergy = false;
-        if(0 == strncmp("erg", metricBasename, 3)
-        && 0 != strncmp("erg_units", metricBasename, 9))
-        {
-        	isEnergy = true;
-        }
-        metricIsEnergy.push_back(isEnergy);
-        metricValues.push_back(-1);
-        metricDeltas.push_back(0);
-        metricTimestamps.push_back(0);
-        metricElapsed.push_back(0);
-        metricIterations.push_back(0);
+        metrics.push_back(examon_metric(newId, metric));
 
         return newId;
 	}
@@ -123,6 +93,7 @@ public:
 	{
 		int port = 1883; // default port
 	    int keepalive = 60;
+	    examon_metric::setErgUnit(-1);
 
 	    hostname = (char *) malloc(1024);
 	    int rc = gethostname(hostname, 1024);
@@ -147,6 +118,7 @@ public:
        	}
 
 	    topicBase = configChannel + topicMaskPrefix + examonHost + topicMaskPostfix;
+	    examon_metric::setTopicBase(topicBase);
 	    topicCmd = topicBase + "/cmd";
 	    topicErgUnits = topicBase + "/data/cpu/0/erg_units";
 
@@ -180,16 +152,13 @@ public:
 	}
 	void subscribe_the_metrics()
 	{
-        char* subTopic = (char*) malloc(1001);
 		for(int i = 0; i < metricIds.size(); ++i)
 		{
 			/* TODO: Make it multi-socket compatible (replace "0" below with "+",
 			 *         also implement logic for receiving multiple values at once */
-            sprintf(subTopic, "%s/data/%s", topicBase.c_str(), metricNames[i].c_str());
-            printf("Trying to subscribe to %s.\n", subTopic);
-            subscribe(NULL, subTopic);
+            printf("Trying to subscribe to %s.\n", metrics[i].getFullTopic().c_str());
+            subscribe(NULL, metrics[i].getFullTopic().c_str());
 		}
-		free(subTopic);
 	}
 	void on_connect(int rc)
 	{
@@ -209,11 +178,6 @@ public:
 			}
 
 
-			/* Disregard desired metrics in metricNames */
-			/* TODO: Do heed the specified metrics */
-
-			//printf("Trying to subscribe to %s.\n", topicErgPkg.c_str());
-			//subscribe(NULL, topicErgPkg.c_str());
 			if(trackErgUnit)
 			{
 			    printf("Trying to subscribe to %s.\n", topicErgUnits.c_str());
@@ -230,45 +194,20 @@ public:
 			{
 				if(1 == sscanf((char *) message->payload, "%lf;%*f", &ergUnit))
 				{
+					examon_metric::setErgUnit(ergUnit);
 					unsubscribe(NULL, topicErgUnits.c_str());
 				}
 			}
 
 			if(0 == strncmp("/data/", message->topic + topicBase.length(), 6))
 			{
-				char* topicName = message->topic + topicBase.length() + 6;
 
-				for(int i = 0; i < metricNames.size(); ++i)
+				for(int i = 0; i < metrics.size(); ++i)
 				{
-					//TODO: Write metric matching for paths like cpu/+/erg_pkg
-					//                                        or +/+/tsc
-					//        however revoke paths like cpu/0/+
-					//                               or cpu/+/+
-					//                               or +/+/+
-					//use mosqpp::topic_matches_sub(string mask_of_topic, string actual_topic, bool* result) here
-					bool topicMatches = false;
-					mosqpp::topic_matches_sub(metricNames[i].c_str(), topicName, &topicMatches);
-					if(topicMatches)
-					{
-						// - read out values from payload
-						double readValue = -1;
-						double readTimestamp = -1;
-						int valuesRead = sscanf((char*) message->payload, "%lf;%lf", &readValue, &readTimestamp);
-						if( 2 == valuesRead )
-						{
-							// - calculate delta
-							bool reportDelta = -1 == metricValues[i];
-							double delta = readValue - metricValues[i];
-							metricDeltas[i] = delta;
-							delta = readTimestamp - metricTimestamps[i];
-							metricElapsed[i] = delta;
 
-							// - put value in metricValues
-							metricValues[i] = readValue;
-							metricTimestamps[i] = readTimestamp;
-							++metricIterations[i];
-							printf("read metric %9s: %0.4lf, metricValues[%d]= %0.4lf\n", metricNames[i].c_str(), readValue, i, metricValues[i]);
-						}
+					if(metrics[i].metricMatches(message->topic))
+					{
+						metrics[i].handleMessage(message->topic, (char*) message->payload, message->payloadlen);
 						break;
 					}
 				}
@@ -303,56 +242,68 @@ public:
        * C6
        * uclk
        */
-      std::string metricBasename = basename(metric_parse.c_str());
 
-      std::vector<scorep::plugin::metric_property> foundMatches = std::vector<scorep::plugin::metric_property>();
 
-	  char* buf = (char*) malloc(metric_parse.length() + 17);
-	  sprintf(buf, "Examon metric \"%s\"", metric_parse.c_str());
-	  buf[metric_parse.length() + 16] = '\0';
-	  bool isAbsolute = false;
-	  bool accumulatedStart = true;
-	  char* unit = (char*) "";
-	  if(0 == strncmp("temp", metricBasename.c_str(), 4))
-	  {
-		  unit = (char*) "C";
-		  isAbsolute = true;
-	  } else if(0 == strncmp("erg", metricBasename.c_str(), 3))
-	  {
-		  if(0 != strncmp("erg_units", metricBasename.c_str(), 9))
+	  std::vector<scorep::plugin::metric_property> foundMatches = std::vector<scorep::plugin::metric_property>();
+
+	  // revoke paths like cpu/0/+
+	  //                or cpu/+/+
+	  //                or +/+/+
+      std::string metricBasename = basename((char*) metric_parse.c_str());
+      if(NULL != strchr(metricBasename.c_str(), '+')
+      || NULL != strchr(metricBasename.c_str(), '#'))
+      {
+    	  fprintf(stderr, "Can't allow metric \"%s\", don't know how to accumulate it\n", metricBasename.c_str());
+    	  return foundMatches;
+      } else
+      {
+		  char* buf = (char*) malloc(metric_parse.length() + 17);
+		  sprintf(buf, "Examon metric \"%s\"", metric_parse.c_str());
+		  buf[metric_parse.length() + 16] = '\0';
+		  bool isAbsolute = false;
+		  bool accumulatedStart = true;
+		  char* unit = (char*) "";
+		  if(0 == strncmp("temp", metricBasename.c_str(), 4))
 		  {
-			  unit = (char*) "J";
-			  trackErgUnit = true;
-			  accumulatedStart = false;
+			  unit = (char*) "C";
+			  isAbsolute = true;
+		  } else if(0 == strncmp("erg", metricBasename.c_str(), 3))
+		  {
+			  if(0 != strncmp("erg_units", metricBasename.c_str(), 9))
+			  {
+				  unit = (char*) "J";
+				  trackErgUnit = true;
+				  accumulatedStart = false;
+			  }
+		  } else if(0 == strncmp("freq", metricBasename.c_str(), 4))
+		  {
+			  unit = (char*) "Hz";
+			  isAbsolute = true;
 		  }
-	  } else if(0 == strncmp("freq", metricBasename.c_str(), 4))
-	  {
-		  unit = (char*) "Hz";
-		  isAbsolute = true;
-	  }
 
-	  scorep::plugin::metric_property prop = scorep::plugin::metric_property(metric_parse, buf, unit);
-	  if(isAbsolute)
-	  {
-		  prop.absolute_last();
-	  } else
-	  {
-		  if(accumulatedStart)
+		  scorep::plugin::metric_property prop = scorep::plugin::metric_property(metric_parse, buf, unit);
+		  if(isAbsolute)
 		  {
-			  prop.accumulated_start();
+			  prop.absolute_last();
 		  } else
 		  {
-			  prop.accumulated_last();
+			  if(accumulatedStart)
+			  {
+				  prop.accumulated_start();
+			  } else
+			  {
+				  prop.accumulated_last();
+			  }
 		  }
-	  }
-	  prop.value_double();
-	  prop.decimal();
-	  foundMatches.push_back(prop);
+		  prop.value_double();
+		  prop.decimal();
+		  foundMatches.push_back(prop);
 
-	  free(buf);
+		  free(buf);
 
 
-      return foundMatches;
+		  return foundMatches;
+      }
 	}
 /* receive metrics here, register them internally with a std::int32_t, which will be later used by score-p to reference the metric here */
 	int32_t add_metric(const std::string& metric_name)
@@ -379,23 +330,10 @@ public:
 	    	int index = id - 1;
 	    	if(0 <= index && index < metricIds.size() && metricIds[index] == id)
 	    	{
-	    		if(-1 < metricValues[index])
+	    		if(metrics[index].hasValue())
 	    		{
-    			    if(metricIsEnergy[index]) {
-    			    	if(-1 < ergUnit && 1 < metricIterations[index])
-    			    	{
-    			    		double calculatedMetric = metricValues[index] / metricElapsed[index] / ergUnit;
-    			    		printf("e %8s %0.4lf = %0.4lf / %0.4lf / %0.4lf\n", metricNames[index].c_str(), calculatedMetric, metricValues[index], metricElapsed[index], ergUnit);
-    			    		p.store(calculatedMetric);
-    			    		return true;
-    			    	}
-    			    } else
-    			    {
-    			    	printf("o %8s %0.4lf\n", metricNames[index].c_str(), metricValues[index]);
-    				    p.store(metricValues[index]);
-    				    return true;
-    			    }
-
+	    			p.store(metrics[index].getLatestValue());
+	    			return true;
 	    		}
 	    	}
 	    }
@@ -416,7 +354,6 @@ public:
 	  */
 	void synchronize(bool is_responsible, SCOREP_MetricSynchronizationMode sync_mode)
 	{
-      /* TODO: Do something */
 		printf("synchronize() called\n");
 		if(!subscribedToMetrics)
 		{
