@@ -7,6 +7,7 @@
 
 #include <string>
 #include <mosquittopp.h>
+#include "examon_mqtt_path.cpp"
 
 extern "C"
 {
@@ -14,29 +15,17 @@ extern "C"
 #include <string.h>
 }
 
-enum ACCUMULATION_STRATEGY {
-	ACCUMULATION_MAX,
-	ACCUMULATION_MIN,
-	ACCUMULATION_SUM,
-	ACCUMULATION_AVG
-};
-/*
-class examon_mqtt_path
-{
-	examon_mqtt_path(char* examonHost, )
-	{
+#include "include_once.hpp"
 
-	}
-};
-*/
+
 class examon_metric
 {
 private:
 	std::int32_t metricId;
 	std::string metricName;
+	examon_mqtt_path* channels;
 	std::string metricFullTopic;
 	double metricValue;
-	bool metricIsEnergy;
 
 	double metricTimestamp;
 	double metricElapsed;
@@ -45,37 +34,82 @@ private:
 	double metricAccumulated;
 	std::int64_t metricSubIterations;
 	ACCUMULATION_STRATEGY accStrategy;
+	EXAMON_METRIC_TYPE metricType;
+	double ergUnit;
 
+	//DEBUG
+	std::int64_t outputCounter = 0;
 public:
 
-	static std::string topicBaseData;
-	static double ergUnit;
-
-	static void setErgUnit(double paramErgUnit) { examon_metric::ergUnit = paramErgUnit; }
-	static void setTopicBase(std::string topic) { examon_metric::topicBaseData = topic + "/data"; }
-	std::string getFullTopic() { return metricFullTopic.c_str(); }
-	examon_metric(std::int32_t id, std::string name)
+	void setErgUnit(double paramErgUnit) { ergUnit = paramErgUnit; }
+	std::string getFullTopic() { return metricFullTopic; }
+	std::string getName() { return metricName; }
+	examon_metric(std::int32_t id, std::string name, examon_mqtt_path* param_channels)
     {
         metricId = id;
-        metricName = name;
-        metricFullTopic = topicBaseData + "/" + name;
-        char* metricBasename = basename((char*) name.c_str());
-        metricIsEnergy = false;
-        if(0 == strncmp("erg", metricBasename, 3)
-        && 0 != strncmp("erg_units", metricBasename, 9))
+        /* configurable accumulation strategy, TODO: also have a heuristic to determine this setting if not explicitly specified */
+        accStrategy = ACCUMULATION_AVG;
+        int semicolonPos = name.find_first_of(';');
+        if(std::string::npos != semicolonPos)
         {
-        	metricIsEnergy = true;
+        	accStrategy = parseAccumulationStrategy(name.substr(semicolonPos + 1, std::string::npos));
+        	name = name.substr(0, semicolonPos);
         }
+        metricName = name;
+        channels = param_channels;
+        metricFullTopic = channels->getDataTopic(name);
+        char* metricBasename = basename((char*) name.c_str());
+        metricType = parseMetricType(metricBasename);
+
         metricValue = -1.00;
         metricTimestamp = 0.00;
         metricElapsed = 0.00;
         metricIterations = 0;
-        metricTopicCount = 0;
+        metricTopicCount = 1;
         metricAccumulated = 0.00;
         metricSubIterations = 0;
-        /* TODO: make it configurable, also have a heuristic to determine this setting if not explicitly specified */
-        accStrategy = ACCUMULATION_AVG;
+
     }
+	ACCUMULATION_STRATEGY parseAccumulationStrategy(std::string str)
+	{
+		if(0 == str.compare("avg")
+		|| 0 == str.compare("Avg")
+		|| 0 == str.compare("AVG")
+		|| 0 == str.compare("average")
+		|| 0 == str.compare("Average")
+		|| 0 == str.compare("AVERAGE"))
+		{
+			return ACCUMULATION_AVG;
+		} else
+		if(0 == str.compare("max")
+		|| 0 == str.compare("Max")
+		|| 0 == str.compare("MAX")
+		|| 0 == str.compare("maximum")
+		|| 0 == str.compare("Maximum")
+		|| 0 == str.compare("MAXIMUM"))
+		{
+			return ACCUMULATION_MAX;
+		} else
+		if(0 == str.compare("min")
+		|| 0 == str.compare("Min")
+		|| 0 == str.compare("MIN")
+		|| 0 == str.compare("minimum")
+		|| 0 == str.compare("Minimum")
+		|| 0 == str.compare("MINIMUM"))
+		{
+			return ACCUMULATION_MIN;
+		} else
+		if(0 == str.compare("sum")
+		|| 0 == str.compare("Sum")
+		|| 0 == str.compare("SUM")
+		|| 0 == str.compare("summation")
+		|| 0 == str.compare("Summation")
+		|| 0 == str.compare("SUMMATION"))
+		{
+			return ACCUMULATION_SUM;
+		}
+		return ACCUMULATION_AVG;
+	}
 	bool metricMatches(char* incomingTopic)
 	{
         bool topicMatches = false;
@@ -89,11 +123,9 @@ public:
 		int valuesRead = sscanf( incomingPayload, "%lf;%lf", &readValue, &readTimestamp);
 		if( 2 == valuesRead )
 		{
-			double delta = 0.00;
 			if(readTimestamp != metricTimestamp)
 			{
-				delta = readTimestamp - metricTimestamp;
-				metricElapsed = delta;
+				metricElapsed = readTimestamp - metricTimestamp;
 
 				metricValue = readValue; // - put value in metricValues
 				++metricIterations;
@@ -116,7 +148,7 @@ public:
 
 					// here is the first duplicate, i.e. timestamps are equal
 					// so the current preceding value was already written to metricValues[i]
-
+					printf("Applying accumulation strategy %d\n", accStrategy);
 					switch(accStrategy)
 					{
 					case ACCUMULATION_AVG:
@@ -140,19 +172,19 @@ public:
 						break;
 					}
 				}
-				metricTimestamp = readTimestamp;
 			}
+			metricTimestamp = readTimestamp;
 
 
 
-			printf("read metric %9s: %0.4lf, metricValue= %0.4lf\n", metricName.c_str(), readValue, metricValue);
+			printf("read metric %9s: %0.4lf, Timestamp:%14.6lf\n", metricName.c_str(), readValue, readTimestamp);
 		}
 	}
 	bool hasValue()
 	{
 		if(1 < metricIterations)
 		{
-			if(!metricIsEnergy || 0 < ergUnit)
+			if(metricType != EXAMON_METRIC_TYPE::ENERGY || 0 < ergUnit)
 			{
 				return true;
 			}
@@ -169,14 +201,14 @@ public:
 		{
 			returnValue = metricValue;
 		}
-		if(metricIsEnergy)
+		if(metricType == EXAMON_METRIC_TYPE::ENERGY)
 		{
 			if(0 < ergUnit)
 			{
-				//TODO: heed metricElapsed: also divide through metricElapsed
-    			returnValue /= ergUnit;
+    			returnValue = returnValue / metricElapsed / ergUnit;
 			}
 		}
+		if(1023 == ((outputCounter++)&1023)) printf("metricName(%s), returnValue(%lf), metricTopicCount(%ld), metricAccumulated(%lf), metricValue(%lf), metricElapsed(%lf), ergUnit(%lf)\n", metricName.c_str(), returnValue, metricTopicCount, metricAccumulated, metricValue, metricElapsed, ergUnit);
 		return returnValue;
 	}
 };

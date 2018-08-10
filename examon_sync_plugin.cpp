@@ -48,7 +48,9 @@
 
 #include "examon_metric.cpp"
 
+
 namespace spp = scorep::plugin::policy;
+
 
 
 class examon_sync_plugin
@@ -67,20 +69,15 @@ private:
 
 		std::int32_t newId = biggestInt + 1;
         metricIds.push_back(newId);
-        metrics.push_back(examon_metric(newId, metric));
+        metrics.push_back(examon_metric(newId, metric, channels));
 
         return newId;
 	}
-	std::string topicMaskPrefix = "/node/";
-	std::string topicMaskPostfix = "/plugin/pmu_pub/chnl";
-	std::string topicBase = "";
-	std::string topicCmd = "";
-	std::string topicErgUnits = "";
 	char* hostname = NULL;
 	char* examonHost = NULL;
 	char* connectHost = NULL;
-	char* configChannel = NULL;
 	char* intervalDuration = NULL;
+	examon_mqtt_path* channels = NULL;
 	double lastValue = 0;
 	double lastTimestamp = 0;
 	double ergUnit = -1;
@@ -93,7 +90,6 @@ public:
 	{
 		int port = 1883; // default port
 	    int keepalive = 60;
-	    examon_metric::setErgUnit(-1);
 
 	    hostname = (char *) malloc(1024);
 	    int rc = gethostname(hostname, 1024);
@@ -101,10 +97,10 @@ public:
         	fprintf(stderr, "Could not read hostname of this host, abort imminent.\n");
         	exit(0);
 	    }
-	    connectHost =      getenv("SCOREP_METRIC_EXAMON_SYNC_PLUGIN_BROKER");
-	    examonHost =       getenv("SCOREP_METRIC_EXAMON_SYNC_PLUGIN_EXAMON_HOST");
-	    configChannel =    getenv("SCOREP_METRIC_EXAMON_SYNC_PLUGIN_CHANNEL");
-	    intervalDuration = getenv("SCOREP_METRIC_EXAMON_SYNC_PLUGIN_INTERVAL");
+	    connectHost =         getenv("SCOREP_METRIC_EXAMON_SYNC_PLUGIN_BROKER");
+	    examonHost =          getenv("SCOREP_METRIC_EXAMON_SYNC_PLUGIN_EXAMON_HOST");
+	    char* configChannel = getenv("SCOREP_METRIC_EXAMON_SYNC_PLUGIN_CHANNEL");
+	    intervalDuration =    getenv("SCOREP_METRIC_EXAMON_SYNC_PLUGIN_INTERVAL");
         if(!connectHost)   connectHost = (char*) "localhost";
         if(!examonHost)    examonHost = hostname;
         if(!configChannel) configChannel = (char*) "org/antarex/cluster/testcluster";
@@ -116,11 +112,7 @@ public:
             	fprintf(stderr, "Could not parse intervalDuration of \"%s\", not a floating point number\n", intervalDuration);
             }
        	}
-
-	    topicBase = configChannel + topicMaskPrefix + examonHost + topicMaskPostfix;
-	    examon_metric::setTopicBase(topicBase);
-	    topicCmd = topicBase + "/cmd";
-	    topicErgUnits = topicBase + "/data/cpu/0/erg_units";
+        channels = new examon_mqtt_path(examonHost, configChannel);
 
 
 	    mosqpp::lib_init();
@@ -154,10 +146,17 @@ public:
 	{
 		for(int i = 0; i < metricIds.size(); ++i)
 		{
-			/* TODO: Make it multi-socket compatible (replace "0" below with "+",
+			/* DONE: Make it multi-socket compatible (replace "0" below with "+",
 			 *         also implement logic for receiving multiple values at once */
             printf("Trying to subscribe to %s.\n", metrics[i].getFullTopic().c_str());
             subscribe(NULL, metrics[i].getFullTopic().c_str());
+		}
+	}
+	void updateErgUnit(double ergUnit)
+	{
+		for(int i = 0; i < metrics.size(); ++i)
+		{
+			metrics[i].setErgUnit(ergUnit);
 		}
 	}
 	void on_connect(int rc)
@@ -172,43 +171,42 @@ public:
 		        char* intervalStr = (char *) malloc(100);
 		        strcpy(intervalStr, "-s ");
 		        strncpy(intervalStr + 3, intervalDuration, 95);
-			    printf("Trying to publish to channel \"%s\", value \"%s\".\n", topicCmd.c_str(), intervalStr);
-			    publish(NULL, topicCmd.c_str(), strlen(intervalStr), intervalStr);
+			    printf("Trying to publish to channel \"%s\", value \"%s\".\n", channels->topicCmd().c_str(), intervalStr);
+			    publish(NULL, channels->topicCmd().c_str(), strlen(intervalStr), intervalStr);
 			    free(intervalStr);
 			}
 
 
 			if(trackErgUnit)
 			{
-			    printf("Trying to subscribe to %s.\n", topicErgUnits.c_str());
-    			subscribe(NULL, topicErgUnits.c_str());
+			    printf("Trying to subscribe to %s.\n", channels->topicErgUnits().c_str());
+    			subscribe(NULL, channels->topicErgUnits().c_str());
 			}
 
 		}
 	}
 	void on_message(const struct mosquitto_message *message)
 	{
-		if(0 == strncmp(message->topic, topicBase.c_str(), topicBase.length()))
+		if(channels->startsWithTopicBase(message->topic))
 		{
-			if(-1 == ergUnit && 0 == strcmp(topicErgUnits.c_str(), message->topic))
+			if(-1 == ergUnit && channels->isErgUnits(message->topic))
 			{
 				if(1 == sscanf((char *) message->payload, "%lf;%*f", &ergUnit))
 				{
-					examon_metric::setErgUnit(ergUnit);
-					unsubscribe(NULL, topicErgUnits.c_str());
+					unsubscribe(NULL, channels->topicErgUnits().c_str());
+					updateErgUnit(ergUnit);
 				}
 			}
 
-			if(0 == strncmp("/data/", message->topic + topicBase.length(), 6))
+			if(0 == strncmp("/data/", message->topic + channels->topicBase().length(), 6))
 			{
-
 				for(int i = 0; i < metrics.size(); ++i)
 				{
 
 					if(metrics[i].metricMatches(message->topic))
 					{
 						metrics[i].handleMessage(message->topic, (char*) message->payload, message->payloadlen);
-						break;
+						//Don't break here, allow for multiple handling
 					}
 				}
 			}
@@ -222,7 +220,6 @@ public:
 	{
 		printf("unsubscribed.\n");
 	}
-
 
     /* return matching properties */
 	std::vector<scorep::plugin::metric_property> get_metric_properties(const std::string& metric_parse)
@@ -253,47 +250,44 @@ public:
       if(NULL != strchr(metricBasename.c_str(), '+')
       || NULL != strchr(metricBasename.c_str(), '#'))
       {
-    	  fprintf(stderr, "Can't allow metric \"%s\", don't know how to accumulate it\n", metricBasename.c_str());
+    	  fprintf(stderr, "Can't allow metric \"%s\", don't know how to accumulate it. Only homogenetic path endings allowed.\n", metricBasename.c_str());
     	  return foundMatches;
       } else
       {
 		  char* buf = (char*) malloc(metric_parse.length() + 17);
 		  sprintf(buf, "Examon metric \"%s\"", metric_parse.c_str());
 		  buf[metric_parse.length() + 16] = '\0';
-		  bool isAbsolute = false;
-		  bool accumulatedStart = true;
 		  char* unit = (char*) "";
-		  if(0 == strncmp("temp", metricBasename.c_str(), 4))
+		  EXAMON_METRIC_TYPE metricType = parseMetricType((char*) metricBasename.c_str());
+		  switch(metricType)
 		  {
+		  case EXAMON_METRIC_TYPE::TEMPERATURE:
 			  unit = (char*) "C";
-			  isAbsolute = true;
-		  } else if(0 == strncmp("erg", metricBasename.c_str(), 3))
-		  {
-			  if(0 != strncmp("erg_units", metricBasename.c_str(), 9))
-			  {
-				  unit = (char*) "J";
-				  trackErgUnit = true;
-				  accumulatedStart = false;
-			  }
-		  } else if(0 == strncmp("freq", metricBasename.c_str(), 4))
-		  {
+			  break;
+		  case EXAMON_METRIC_TYPE::ENERGY:
+			  trackErgUnit = true;
+			  unit = (char*) "J";
+			  break;
+		  case EXAMON_METRIC_TYPE::FREQUENCY:
 			  unit = (char*) "Hz";
-			  isAbsolute = true;
+			  break;
 		  }
 
 		  scorep::plugin::metric_property prop = scorep::plugin::metric_property(metric_parse, buf, unit);
-		  if(isAbsolute)
+		  switch(metricType)
 		  {
+		  case EXAMON_METRIC_TYPE::TEMPERATURE:
+			  prop.absolute_point();
+			  break;
+		  case EXAMON_METRIC_TYPE::ENERGY:
+			  prop.accumulated_last();
+			  break;
+		  case EXAMON_METRIC_TYPE::FREQUENCY:
 			  prop.absolute_last();
-		  } else
-		  {
-			  if(accumulatedStart)
-			  {
-				  prop.accumulated_start();
-			  } else
-			  {
-				  prop.accumulated_last();
-			  }
+			  break;
+		  case EXAMON_METRIC_TYPE::UNKNOWN:
+			  prop.accumulated_start();
+			  break;
 		  }
 		  prop.value_double();
 		  prop.decimal();

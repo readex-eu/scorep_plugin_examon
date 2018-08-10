@@ -18,18 +18,13 @@ endif()
 
 # library stuff
 
-add_library(examon_sync_plugin SHARED examon_sync_plugin.cpp examon_metric.cpp)
+add_library(examon_sync_plugin SHARED examon_sync_plugin.cpp examon_metric.cpp examon_mqtt_path.cpp)
 # taken from the corresponding wiki
 target_link_libraries(examon_sync_plugin PRIVATE Scorep::scorep-plugin-cxx)
 
-# try linking mosquitto
-#target_link_libraries(examon_sync_plugin PRIVATE extern/mosquitto-1.5/cpp/libmosquittopp.so)
+
 target_link_libraries(examon_sync_plugin PRIVATE libmosquitto)
-# TODO: Make this better
-target_link_libraries(examon_sync_plugin PRIVATE /home/jitschin/git/scorep_plugin_examon/build/extern/mosquitto-1.5/lib/cpp/libmosquittopp.so)
-#target_link_libraries(examon_sync_plugin PRIVATE extern/mosquitto-1.5/lib)
-#set_property(TARGET examon_sync_plugin PROPERTY IMPORTED_LOCATION "extern/mosquitto-1.5/cpp/libmosquittopp.so")
-#set_property(TARGET examon_sync_plugin PROPERTY IMPORTED_LOCATION "extern/mosquitto-1.5/libmosquitto.so")
+target_link_libraries(examon_sync_plugin PRIVATE mosquittopp)
 
 
 #target_include_directories(examon_sync_plugin PUBLIC extern/scorep_plugin_cxx_wrapper/include)
