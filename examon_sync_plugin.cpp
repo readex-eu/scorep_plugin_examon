@@ -48,6 +48,10 @@
 
 #include "examon_metric.cpp"
 
+extern "C"
+{
+#include <math.h>
+}
 
 namespace spp = scorep::plugin::policy;
 
@@ -193,6 +197,11 @@ public:
 			{
 				if(1 == sscanf((char *) message->payload, "%lf;%*f", &ergUnit))
 				{
+					          // energy unit
+					          // taken from https://github.com/deater/uarch-configure/blob/master/rapl-read/rapl-read.c#L403
+					          // also see http://web.eece.maine.edu/~vweaver/projects/rapl/
+					ergUnit = pow(0.5,(double)((((int)ergUnit)>>8)&0x1f));
+
 					unsubscribe(NULL, channels->topicErgUnits().c_str());
 					updateErgUnit(ergUnit);
 				}
@@ -286,7 +295,7 @@ public:
 			  prop.absolute_last();
 			  break;
 		  case EXAMON_METRIC_TYPE::UNKNOWN:
-			  prop.accumulated_start();
+			  prop.accumulated_last();
 			  break;
 		  }
 		  prop.value_double();

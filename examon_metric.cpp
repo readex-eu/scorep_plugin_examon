@@ -66,7 +66,7 @@ public:
         metricElapsed = 0.00;
         metricIterations = 0;
         metricTopicCount = 1;
-        metricAccumulated = 0.00;
+        metricAccumulated = -1.00;
         metricSubIterations = 0;
 
     }
@@ -186,7 +186,13 @@ public:
 		{
 			if(metricType != EXAMON_METRIC_TYPE::ENERGY || 0 < ergUnit)
 			{
-				return true;
+				if(1 < metricTopicCount)
+				{
+					return -1.00 != metricAccumulated;
+				} else
+				{
+				  return true;
+				}
 			}
 		}
 		return false;
@@ -205,7 +211,7 @@ public:
 		{
 			if(0 < ergUnit)
 			{
-    			returnValue = returnValue / metricElapsed / ergUnit;
+    			returnValue = returnValue * ergUnit;
 			}
 		}
 		if(1023 == ((outputCounter++)&1023)) printf("metricName(%s), returnValue(%lf), metricTopicCount(%ld), metricAccumulated(%lf), metricValue(%lf), metricElapsed(%lf), ergUnit(%lf)\n", metricName.c_str(), returnValue, metricTopicCount, metricAccumulated, metricValue, metricElapsed, ergUnit);
