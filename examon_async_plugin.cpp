@@ -238,18 +238,12 @@ public:
 	{
 	  //DEBUG
       std::cout << "get_metric_properties(\"" << metric_parse << "\")"<< std::endl;
-      /* valid metrics:
-       * tsc
-       * temp_pkg
-       * erg_dram  -> also track erg_units
-       * erg_cores -> also track erg_units
-       * erg_pkg   -> also track erg_units
-       * erg_units
-       * freq_ref
-       * C2
-       * C3
-       * C6
-       * uclk
+      /* some cpu metrics:
+       * tsc, temp_pkg, erg_dram, erg_cores, erg_pkg, erg_units, freq_ref, C2, C3, C6, uclk
+       * some core metrics:
+       * aperf, clk_curr, clk_ref, C3, C6, inst, mperf, temp, tsc
+       * UOPS_RETIRED.RETIRE_SLOTS, CACHE.MISSES, LONGEST_LAT_CACHE.MISS, MEM_LOAD_RETIRED.ALL_BRANCHES
+       * UOPS_ISSUED.ANY, IDQ_UOPS_NOT_DELIVERED.CORE, INT_MISCRECOVERY_CYCLES
        */
 
 
@@ -292,7 +286,7 @@ public:
 			  prop.absolute_point();
 			  break;
 		  case EXAMON_METRIC_TYPE::ENERGY:
-			  prop.accumulated_last();
+			  prop.accumulated_start();
 			  break;
 		  case EXAMON_METRIC_TYPE::FREQUENCY:
 			  prop.absolute_last();

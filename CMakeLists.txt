@@ -20,23 +20,13 @@ endif()
 
 add_library(examon_sync_plugin SHARED examon_sync_plugin.cpp examon_metric.cpp examon_mqtt_path.cpp)
 # taken from the corresponding wiki
-target_link_libraries(examon_sync_plugin PRIVATE Scorep::scorep-plugin-cxx)
-target_link_libraries(examon_sync_plugin PRIVATE libmosquitto)
-target_link_libraries(examon_sync_plugin PRIVATE mosquittopp)
-#target_include_directories(examon_sync_plugin PUBLIC extern/scorep_plugin_cxx_wrapper/include)
-target_include_directories(examon_sync_plugin PUBLIC extern/mosquitto-1.5/lib)
-target_include_directories(examon_sync_plugin PUBLIC extern/mosquitto-1.5/lib/cpp)
-target_include_directories(examon_sync_plugin PUBLIC extern/mosquitto-1.5/client)
+target_link_libraries(examon_sync_plugin PRIVATE Scorep::scorep-plugin-cxx libmosquitto mosquittopp)
+target_include_directories(examon_sync_plugin PUBLIC extern/mosquitto-1.5/lib extern/mosquitto-1.5/lib/cpp extern/mosquitto-1.5/client)
 
 add_library(examon_async_plugin SHARED examon_async_plugin.cpp examon_metric.cpp examon_mqtt_path.cpp)
-target_link_libraries(examon_async_plugin PRIVATE Scorep::scorep-plugin-cxx)
-target_link_libraries(examon_async_plugin PRIVATE libmosquitto)
-target_link_libraries(examon_async_plugin PRIVATE mosquittopp)
+target_link_libraries(examon_async_plugin PRIVATE Scorep::scorep-plugin-cxx libmosquitto mosquittopp)
+target_include_directories(examon_async_plugin PUBLIC extern/mosquitto-1.5/lib extern/mosquitto-1.5/lib/cpp extern/mosquitto-1.5/client)
 #target_include_directories(examon_async_plugin PUBLIC extern/scorep_plugin_cxx_wrapper/include)
-target_include_directories(examon_async_plugin PUBLIC extern/mosquitto-1.5/lib)
-target_include_directories(examon_async_plugin PUBLIC extern/mosquitto-1.5/lib/cpp)
-target_include_directories(examon_async_plugin PUBLIC extern/mosquitto-1.5/client)
-
 
 
 # would only be required if using c-style malloc without casting
@@ -49,4 +39,6 @@ target_include_directories(examon_async_plugin PUBLIC extern/mosquitto-1.5/clien
 
 
 install(TARGETS examon_sync_plugin
+    LIBRARY DESTINATION lib)
+install(TARGETS examon_async_plugin
     LIBRARY DESTINATION lib)

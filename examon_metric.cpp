@@ -142,17 +142,7 @@ public:
 				{
 					if(1 < metricIterations && 1 == metricTopicCount)
 					{
-						scorep::chrono::ticks nowTicks = scorep::chrono::measurement_clock::now();
-						if(metricType == EXAMON_METRIC_TYPE::ENERGY)
-						{
-							if(0 < ergUnit)
-							{
-						        gatheredData.push_back(std::pair<scorep::chrono::ticks, double>(nowTicks, metricValue * ergUnit));
-							}
-						} else
-						{
-							gatheredData.push_back(std::pair<scorep::chrono::ticks, double>(nowTicks, metricValue));
-						}
+						pushLatestValue(false);
 					}
 				}
 			} else
@@ -199,17 +189,7 @@ public:
 					}
 					if(completedCycle && gatherData)
 					{
-						scorep::chrono::ticks nowTicks = scorep::chrono::measurement_clock::now();
-						if(metricType == EXAMON_METRIC_TYPE::ENERGY)
-						{
-							if(0 < ergUnit)
-							{
-						        gatheredData.push_back(std::pair<scorep::chrono::ticks, double>(nowTicks, metricAccumulated * ergUnit));
-							}
-						} else
-						{
-							gatheredData.push_back(std::pair<scorep::chrono::ticks, double>(nowTicks, metricAccumulated));
-						}
+                        pushLatestValue(true);
 					}
 
 				}
@@ -257,6 +237,25 @@ public:
 		}
 		if(1023 == ((outputCounter++)&1023)) printf("metricName(%s), returnValue(%lf), metricTopicCount(%ld), metricAccumulated(%lf), metricValue(%lf), metricElapsed(%lf), ergUnit(%lf)\n", metricName.c_str(), returnValue, metricTopicCount, metricAccumulated, metricValue, metricElapsed, ergUnit);
 		return returnValue;
+	}
+	void pushLatestValue(bool accumulated)
+	{
+		//std::chrono::system_clock::time_point
+		scorep::chrono::ticks nowTicks = scorep::chrono::measurement_clock::now();
+		double writeMetric = 0.00;
+		if(accumulated) writeMetric = metricAccumulated;
+		else            writeMetric = metricValue;
+		if(metricType == EXAMON_METRIC_TYPE::ENERGY)
+		{
+			if(0 < ergUnit)
+			{
+
+		        gatheredData.push_back(std::pair<scorep::chrono::ticks, double>(nowTicks, writeMetric * ergUnit));
+			}
+		} else
+		{
+			gatheredData.push_back(std::pair<scorep::chrono::ticks, double>(nowTicks, writeMetric));
+		}
 	}
 	std::vector<std::pair<scorep::chrono::ticks, double>>* getGatheredData()
 	{
