@@ -5,6 +5,10 @@
  *      Author: jitschin
  */
 
+#include <vector>
+#include <utility>
+#include <scorep/chrono/chrono.hpp>
+
 #include <string>
 #include <mosquittopp.h>
 #include "examon_mqtt_path.cpp"
@@ -36,6 +40,8 @@ private:
 	ACCUMULATION_STRATEGY accStrategy;
 	EXAMON_METRIC_TYPE metricType;
 	double ergUnit;
+	bool gatherData;
+	std::vector<std::pair<scorep::chrono::ticks, double>> gatheredData;
 
 	//DEBUG
 	std::int64_t outputCounter = 0;
@@ -44,7 +50,8 @@ public:
 	void setErgUnit(double paramErgUnit) { ergUnit = paramErgUnit; }
 	std::string getFullTopic() { return metricFullTopic; }
 	std::string getName() { return metricName; }
-	examon_metric(std::int32_t id, std::string name, examon_mqtt_path* param_channels)
+	void setGatherData(bool stillGather) { gatherData = stillGather; }
+	examon_metric(std::int32_t id, std::string name, examon_mqtt_path* param_channels, bool param_gather)
     {
         metricId = id;
         /* configurable accumulation strategy, TODO: also have a heuristic to determine this setting if not explicitly specified */
@@ -69,6 +76,7 @@ public:
         metricAccumulated = -1.00;
         metricSubIterations = 0;
 
+        gatherData = param_gather;
     }
 	ACCUMULATION_STRATEGY parseAccumulationStrategy(std::string str)
 	{
@@ -130,6 +138,23 @@ public:
 				metricValue = readValue; // - put value in metricValues
 				++metricIterations;
 				metricSubIterations = 1;
+				if(gatherData)
+				{
+					if(1 < metricIterations && 1 == metricTopicCount)
+					{
+						scorep::chrono::ticks nowTicks = scorep::chrono::measurement_clock::now();
+						if(metricType == EXAMON_METRIC_TYPE::ENERGY)
+						{
+							if(0 < ergUnit)
+							{
+						        gatheredData.push_back(std::pair<scorep::chrono::ticks, double>(nowTicks, metricValue * ergUnit));
+							}
+						} else
+						{
+							gatheredData.push_back(std::pair<scorep::chrono::ticks, double>(nowTicks, metricValue));
+						}
+					}
+				}
 			} else
 			{
 				++metricSubIterations;
@@ -149,28 +174,44 @@ public:
 					// here is the first duplicate, i.e. timestamps are equal
 					// so the current preceding value was already written to metricValues[i]
 					printf("Applying accumulation strategy %d\n", accStrategy);
+					bool completedCycle = metricSubIterations == metricTopicCount;
 					switch(accStrategy)
 					{
 					case ACCUMULATION_AVG:
 						metricValue += readValue;
-						if(metricSubIterations == metricTopicCount)
+						if(completedCycle)
 						{
 							metricAccumulated = metricValue / metricTopicCount;
 						}
 						break;
 					case ACCUMULATION_SUM:
 						metricValue += readValue;
-						if(metricSubIterations == metricTopicCount) metricAccumulated = metricValue;
+						if(completedCycle) metricAccumulated = metricValue;
 						break;
 					case ACCUMULATION_MIN:
 						if(metricValue > readValue) metricValue = readValue;
-						if(metricSubIterations == metricTopicCount) metricAccumulated = metricValue;
+						if(completedCycle) metricAccumulated = metricValue;
 						break;
 					case ACCUMULATION_MAX:
 						if(metricValue < readValue) metricValue = readValue;
-						if(metricSubIterations == metricTopicCount) metricAccumulated = metricValue;
+						if(completedCycle) metricAccumulated = metricValue;
 						break;
 					}
+					if(completedCycle && gatherData)
+					{
+						scorep::chrono::ticks nowTicks = scorep::chrono::measurement_clock::now();
+						if(metricType == EXAMON_METRIC_TYPE::ENERGY)
+						{
+							if(0 < ergUnit)
+							{
+						        gatheredData.push_back(std::pair<scorep::chrono::ticks, double>(nowTicks, metricAccumulated * ergUnit));
+							}
+						} else
+						{
+							gatheredData.push_back(std::pair<scorep::chrono::ticks, double>(nowTicks, metricAccumulated));
+						}
+					}
+
 				}
 			}
 			metricTimestamp = readTimestamp;
@@ -216,6 +257,10 @@ public:
 		}
 		if(1023 == ((outputCounter++)&1023)) printf("metricName(%s), returnValue(%lf), metricTopicCount(%ld), metricAccumulated(%lf), metricValue(%lf), metricElapsed(%lf), ergUnit(%lf)\n", metricName.c_str(), returnValue, metricTopicCount, metricAccumulated, metricValue, metricElapsed, ergUnit);
 		return returnValue;
+	}
+	std::vector<std::pair<scorep::chrono::ticks, double>>* getGatheredData()
+	{
+        return &gatheredData;
 	}
 };
 

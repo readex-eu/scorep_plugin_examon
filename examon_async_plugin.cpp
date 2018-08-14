@@ -33,6 +33,8 @@
 /* #include </usr/include/c++/5/string> */
 #include <string>
 #include <vector>
+#include <utility>
+#include <scorep/chrono/chrono.hpp>
 /* very basic plugin base */
 #include <scorep/plugin/plugin.hpp>
 /* matching for get_metric_properties */
@@ -57,9 +59,9 @@ namespace spp = scorep::plugin::policy;
 
 
 
-class examon_sync_plugin
-: public scorep::plugin::base<examon_sync_plugin, spp::per_host, spp::sync,
-                              spp::scorep_clock, spp::synchronize>, public mosqpp::mosquittopp
+class examon_async_plugin
+: public scorep::plugin::base<examon_async_plugin, spp::per_host, spp::async,
+                              spp::scorep_clock>, public mosqpp::mosquittopp
 {
 private:
 	bool valid_connection = false;
@@ -73,7 +75,7 @@ private:
 
 		std::int32_t newId = biggestInt + 1;
         metricIds.push_back(newId);
-        metrics.push_back(examon_metric(newId, metric, channels, false));
+        metrics.push_back(examon_metric(newId, metric, channels, true));
 
         return newId;
 	}
@@ -90,7 +92,7 @@ private:
 	bool isAlive = true;
 	bool subscribedToMetrics = false;
 public:
-	examon_sync_plugin()
+	examon_async_plugin()
 	{
 		int port = 1883; // default port
 	    int keepalive = 60;
@@ -101,10 +103,10 @@ public:
         	fprintf(stderr, "Could not read hostname of this host, abort imminent.\n");
         	exit(0);
 	    }
-	    connectHost =         getenv("SCOREP_METRIC_EXAMON_SYNC_PLUGIN_BROKER");
-	    examonHost =          getenv("SCOREP_METRIC_EXAMON_SYNC_PLUGIN_EXAMON_HOST");
-	    char* configChannel = getenv("SCOREP_METRIC_EXAMON_SYNC_PLUGIN_CHANNEL");
-	    intervalDuration =    getenv("SCOREP_METRIC_EXAMON_SYNC_PLUGIN_INTERVAL");
+	    connectHost =         getenv("SCOREP_METRIC_EXAMON_ASYNC_PLUGIN_BROKER");
+	    examonHost =          getenv("SCOREP_METRIC_EXAMON_ASYNC_PLUGIN_EXAMON_HOST");
+	    char* configChannel = getenv("SCOREP_METRIC_EXAMON_ASYNC_PLUGIN_CHANNEL");
+	    intervalDuration =    getenv("SCOREP_METRIC_EXAMON_ASYNC_PLUGIN_INTERVAL");
         if(!connectHost)   connectHost = (char*) "localhost";
         if(!examonHost)    examonHost = hostname;
         if(!configChannel) configChannel = (char*) "org/antarex/cluster/testcluster";
@@ -128,20 +130,21 @@ public:
         pthread_t thread_id; /* TODO: store the thread id */
         pthread_create(&thread_id, NULL, &pthread_loop, this);
 	}
-	~examon_sync_plugin()
+	~examon_async_plugin()
 	{
 		/*  close connection to mosquitto */
 		isAlive = false;
-		isConnected = false;
-		disconnect();
+		if(isConnected)
+		{
+		    isConnected = false;
+		    disconnect();
+		}
 		mosqpp::lib_cleanup();
 
 	}
-	bool alive() { return isAlive; }
-	bool connected() { return isConnected; }
 	static void* pthread_loop(void* arg)
 	{
-		examon_sync_plugin* myObj = (examon_sync_plugin*) arg;
+		examon_async_plugin* myObj = (examon_async_plugin*) arg;
 
 	    myObj->loop_forever();
 
@@ -326,48 +329,56 @@ public:
 	   *
 	   **/
 	/* get_current_value is the strict variant, value is written to &proxy */
-	template <class Proxy> bool get_optional_value(std::int32_t id, Proxy& p)
+	template <class Cursor> void get_all_values(std::int32_t id, Cursor& c)
 	{
-	    if(isConnected)
-	    {
-	    	int index = id - 1;
-	    	if(0 <= index && index < metricIds.size() && metricIds[index] == id)
-	    	{
-	    		if(metrics[index].hasValue())
-	    		{
-	    			p.store(metrics[index].getLatestValue());
-	    			return true;
-	    		}
-	    	}
-	    }
-        return false;
+		int index = id - 1;
+		if(0 <= index && index < metricIds.size() && metricIds[index] == id)
+		{
+			std::vector<std::pair<scorep::chrono::ticks, double>>* values = metrics[index].getGatheredData();
+			if(0 < values->size())
+			{
+				//fuck iterators, they are nothing but trouble
+			    //for(std::vector<std::pair<scorep::chrono::ticks, double>>::iterator iter = values->begin(); iter != values->end(); ++iter)
+				//assert(&((*iter).first) != NULL);
+				//assert((double) (*iter).second);
+				//c.write((*iter).first, (*iter).second);
+				for(int i = 0; i < values->size(); ++i)
+			    {
+			    	c.write((*values)[i].first, (*values)[i].second);
+			    }
+			}
+		}
 	}
-	/** function to determine the responsible process for x86_energy
-	  *
-	  * If there is no MPI communication, the x86_energy communication is PER_PROCESS,
-	  * so Score-P cares about everything.
-	  * If there is MPI communication and the plugin is build with -DHAVE_MPI,
-	  * we are grouping all MPI_Processes according to their hostname hash.
-	  * Then we select rank 0 to be the responsible rank for MPI communication.
-	  *
-	  * @param is_responsible the Score-P responsibility
-	  * @param sync_mode sync mode, i.e. SCOREP_METRIC_SYNCHRONIZATION_MODE_BEGIN for non MPI
-	  *              programs and SCOREP_METRIC_SYNCHRONIZATION_MODE_BEGIN_MPP for MPI program.
-	  *              Does not deal with SCOREP_METRIC_SYNCHRONIZATION_MODE_END
-	  */
-	void synchronize(bool is_responsible, SCOREP_MetricSynchronizationMode sync_mode)
-	{
-		printf("synchronize() called\n");
+    void start()
+    {
 		if(!subscribedToMetrics)
 		{
             subscribe_the_metrics();
             subscribedToMetrics = true;
 		}
+    }
+    void stop()
+    {
+        //TODO: do something in here, like disconnect
+    	if(isConnected)
+    	{
+    		isConnected = false;
+    		disconnect();
+    	}
+    	for(int i = 0; i < metrics.size(); ++i)
+    	{
+    		metrics[i].setGatherData(false);
+    	}
+
+    }
+	void synchronize(bool is_responsible, SCOREP_MetricSynchronizationMode sync_mode)
+	{
+
 	}
 };
 
 
 
-SCOREP_METRIC_PLUGIN_CLASS(examon_sync_plugin, "examon_sync")
+SCOREP_METRIC_PLUGIN_CLASS(examon_async_plugin, "examon_async")
 
 
