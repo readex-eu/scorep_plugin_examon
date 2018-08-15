@@ -41,8 +41,6 @@ private:
     bool do_gather_data;
     std::vector<std::pair<scorep::chrono::ticks, double>> gathered_data;
 
-    // DEBUG
-    std::int64_t output_counter = 0;
 
 public:
     void set_erg_unit(double param_erg_unit)
@@ -173,7 +171,6 @@ public:
 
                     // here is the first duplicate, i.e. timestamps are equal
                     // so the current preceding value was already written to metricValues[i]
-                    printf("Applying accumulation strategy %d\n", acc_strategy);
                     bool completed_cycle = metric_sub_iterations == metric_topic_count;
                     switch (acc_strategy)
                     {
@@ -210,8 +207,6 @@ public:
             }
             metric_timestamp = read_timestamp;
 
-            printf("read metric %9s: %0.4lf, Timestamp:%14.6lf\n", name.c_str(), read_value,
-                   read_timestamp);
         }
     }
     bool has_value()
@@ -250,11 +245,6 @@ public:
                 return_value = return_value * erg_unit;
             }
         }
-        if (1023 == ((output_counter++) & 1023))
-            printf("metricName(%s), returnValue(%lf), metricTopicCount(%ld), "
-                   "metricAccumulated(%lf), metricValue(%lf), metricElapsed(%lf), ergUnit(%lf)\n",
-                   name.c_str(), return_value, metric_topic_count, metric_accumulated, metric_value,
-                   metric_elapsed, erg_unit);
         return return_value;
     }
     void push_latest_value(bool accumulated)

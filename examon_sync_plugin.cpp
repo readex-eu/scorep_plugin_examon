@@ -37,8 +37,6 @@
 #include <scorep/plugin/plugin.hpp>
 /* matching for get_metric_properties */
 #include <scorep/plugin/util/matcher.hpp>
-/* only for debugging */
-#include <iostream>
 /* use phtread */
 #include <pthread.h>
 /* for gethostname() */
@@ -83,6 +81,7 @@ private:
     bool is_connected = false;
     bool is_alive = true;
     bool subscribed_to_metrics = false;
+    pthread_t* thread_id;
 
 public:
     examon_sync_plugin()
@@ -121,12 +120,13 @@ public:
 
         mosqpp::lib_init();
 
-        printf("calling non-async connect\n");
         connect(connect_host, port, keepalive);
 
         is_alive = true;
-        pthread_t thread_id; /* TODO: store the thread id */
-        pthread_create(&thread_id, NULL, &pthread_loop, this);
+
+        pthread_t thread_structure;
+        pthread_create(&thread_structure, NULL, &pthread_loop, this);
+        thread_id = &thread_structure;
     }
     ~examon_sync_plugin()
     {
@@ -158,7 +158,6 @@ public:
         {
             /* DONE: Make it multi-socket compatible (replace "0" below with "+",
              *         also implement logic for receiving multiple values at once */
-            printf("Trying to subscribe to %s.\n", metrics[i].get_full_topic().c_str());
             subscribe(NULL, metrics[i].get_full_topic().c_str());
         }
     }
@@ -171,7 +170,6 @@ public:
     }
     void on_connect(int rc)
     {
-        printf("Connected with code %d.\n", rc);
         if (rc == 0)
         {
 
@@ -182,15 +180,12 @@ public:
                 char* interval_str = (char*)malloc(100);
                 strcpy(interval_str, "-s ");
                 strncpy(interval_str + 3, interval_duration, 95);
-                printf("Trying to publish to channel \"%s\", value \"%s\".\n",
-                       channels->topic_cmd().c_str(), interval_str);
                 publish(NULL, channels->topic_cmd().c_str(), strlen(interval_str), interval_str);
                 free(interval_str);
             }
 
             if (track_erg_unit)
             {
-                printf("Trying to subscribe to %s.\n", channels->topic_erg_units().c_str());
                 subscribe(NULL, channels->topic_erg_units().c_str());
             }
         }
@@ -231,19 +226,16 @@ public:
     }
     void on_subscribe(int mid, int qos_count, const int* granted_qos)
     {
-        printf("Subscription succeeded.\n");
     }
     void on_unsubscribe(int mid)
     {
-        printf("unsubscribed.\n");
     }
 
     /* return matching properties */
     std::vector<scorep::plugin::metric_property>
     get_metric_properties(const std::string& metric_parse)
     {
-        // DEBUG
-        std::cout << "get_metric_properties(\"" << metric_parse << "\")" << std::endl;
+
         /* some cpu metrics:
          * tsc, temp_pkg, erg_dram, erg_cores, erg_pkg, erg_units, freq_ref, C2, C3, C6, uclk
          * some core metrics:
@@ -319,8 +311,6 @@ public:
      * by score-p to reference the metric here */
     int32_t add_metric(const std::string& metric_name)
     {
-        // DEBUG
-        std::cout << "add_metric(\"" << metric_name << "\")" << std::endl;
 
         return put_metric(metric_name);
     }
@@ -365,7 +355,6 @@ public:
       */
     void synchronize(bool is_responsible, SCOREP_MetricSynchronizationMode sync_mode)
     {
-        printf("synchronize() called\n");
         if (!subscribed_to_metrics)
         {
             subscribe_the_metrics();
