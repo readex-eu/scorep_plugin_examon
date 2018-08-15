@@ -23,51 +23,77 @@ extern "C" {
 class examon_metric
 {
 private:
-    std::int32_t id;
-    std::string name;
-    examon_mqtt_path* channels;
-    std::string full_topic;
-    double metric_value;
-
-    double metric_timestamp;
-    double metric_elapsed;
-    std::int64_t metric_iterations;
-    std::int64_t metric_topic_count;
-    double metric_accumulated;
-    std::int64_t metric_sub_iterations;
-    ACCUMULATION_STRATEGY acc_strategy;
-    EXAMON_METRIC_TYPE metric_type;
-    double erg_unit;
-    bool do_gather_data;
-    std::vector<std::pair<scorep::chrono::ticks, double>> gathered_data;
+    std::int32_t id;  /**< the id of this metric, with which it is known to Score-P */
+    std::string name; /**< the short name of this metric e.g. "cpu/0/erg_pkg" */
+    examon_mqtt_path *channels;  /**< the associated channels/topics for the current host */
+    std::string full_topic;  /**< the full spelled out topic, it is often quite long */
+    double metric_value;  /**< the last read value */
+    double metric_timestamp;  /**< the last read Timestamp */
+    double metric_elapsed;  /**< the time that elapsed between the last two Timestamps */
+    std::int64_t metric_iterations;  /**< how many values were read in total of this metric */
+    std::int64_t metric_topic_count;  /**< how many values were read with the same Timestamp at the beginning of measurement */
+    double metric_accumulated;  /**< the latest accumulated value */
+    std::int64_t metric_sub_iterations;  /**< how many values with the same timestamp were just received */
+    ACCUMULATION_STRATEGY acc_strategy;  /**< how to add/subtract/calculate the accumulated value */
+    EXAMON_METRIC_TYPE metric_type;  /**< the kind of metric we are treating herein*/
+    double erg_unit;  /**< stored erg_unit with which to multiply the raw erg_* values */
+    bool do_gather_data; /**< whether we need to store the received values (e.g. for the async plugin) */
+    std::vector<std::pair<scorep::chrono::ticks, double>> gathered_data; /**< stored values */
 
 
 public:
+    /**
+     * update the erg_unit with which to multiply erg_* units
+     */
     void set_erg_unit(double param_erg_unit)
     {
         erg_unit = param_erg_unit;
     }
+    /**
+     * returns the full MQTT/Examon topic for this metric
+     */
     std::string get_full_topic()
     {
         return full_topic;
     }
+    /**
+     * return the short name of this metric
+     */
     std::string get_name()
     {
         return name;
     }
+    /**
+     * set whether to gather the read values
+     *
+     * used when finishing the async plugin to call an end to the data gathering
+     */
     void set_gather_data(bool param_do_gather)
     {
         do_gather_data = param_do_gather;
     }
+    /**
+     * return my id
+     */
     std::int32_t get_id()
     {
         return id;
     }
+    /**
+     * returns a pointer to the data that was gathered with this metric
+     */
     std::vector<std::pair<scorep::chrono::ticks, double>>* get_gathered_data()
     {
         return &gathered_data;
     }
-    examon_metric(std::int32_t param_id, std::string param_name, examon_mqtt_path* param_channels,
+    /**
+     * Initialize an Examon metric
+     * @param param_id the id provided to Score-P for this metric
+     * @param param_name the short name/short topic for this metric
+     * @param param_channels a pointer to the corresponding MQTT/Examon topic descriptor
+     * @param param_gather whether to retain read out values and timestamps (e.g. for async plugin to be read out later)
+     */
+    examon_metric(std::int32_t param_id, std::string param_name, examon_mqtt_path *param_channels,
                   bool param_gather)
     {
         id = param_id;
@@ -97,40 +123,23 @@ public:
 
         do_gather_data = param_gather;
     }
-    ACCUMULATION_STRATEGY parse_accumulation_strategy(std::string str)
-    {
-        if (0 == str.compare("avg") || 0 == str.compare("Avg") || 0 == str.compare("AVG") ||
-            0 == str.compare("average") || 0 == str.compare("Average") ||
-            0 == str.compare("AVERAGE"))
-        {
-            return ACCUMULATION_AVG;
-        }
-        else if (0 == str.compare("max") || 0 == str.compare("Max") || 0 == str.compare("MAX") ||
-                 0 == str.compare("maximum") || 0 == str.compare("Maximum") ||
-                 0 == str.compare("MAXIMUM"))
-        {
-            return ACCUMULATION_MAX;
-        }
-        else if (0 == str.compare("min") || 0 == str.compare("Min") || 0 == str.compare("MIN") ||
-                 0 == str.compare("minimum") || 0 == str.compare("Minimum") ||
-                 0 == str.compare("MINIMUM"))
-        {
-            return ACCUMULATION_MIN;
-        }
-        else if (0 == str.compare("sum") || 0 == str.compare("Sum") || 0 == str.compare("SUM") ||
-                 0 == str.compare("summation") || 0 == str.compare("Summation") ||
-                 0 == str.compare("SUMMATION"))
-        {
-            return ACCUMULATION_SUM;
-        }
-        return ACCUMULATION_AVG;
-    }
+
+    /**
+     * whether the given topic matches this metric's topic/name
+     *
+     * @param incoming_topic a char* pointer to a C-style-string
+     * @see handle_message()
+     */
     bool metric_matches(char* incoming_topic)
     {
         bool topic_matches = false;
         mosqpp::topic_matches_sub(full_topic.c_str(), incoming_topic, &topic_matches);
         return topic_matches;
     }
+    /**
+     * Handle an incoming MQTT message, to be called after metric_matches()
+     * @see metric_matches()
+     */
     void handle_message(char* incoming_topic, char* incoming_payload, int payloadlen)
     {
         double read_value = -1;
@@ -209,6 +218,9 @@ public:
 
         }
     }
+    /**
+     * return whether this metric has so far read out a valid metric value
+     */
     bool has_value()
     {
         if (1 < metric_iterations)
@@ -227,6 +239,9 @@ public:
         }
         return false;
     }
+    /**
+     * returns the last read value, adjusted by erg_unit if necessary
+     */
     double get_latest_value()
     {
         double return_value = 0.00;
@@ -247,6 +262,9 @@ public:
         }
         return return_value;
     }
+    /**
+     * internally used for when a value is to be quickly stored
+     */
     void push_latest_value(bool accumulated)
     {
         // std::chrono::system_clock::time_point
