@@ -5,52 +5,64 @@
  *      Author: jitschin
  */
 
-
-#include <string>
-
-extern "C"
-{
+extern "C" {
 #include <string.h>
 }
+
+#include <string>
 
 class examon_mqtt_path
 {
 private:
-	std::string maskPrefix = "/node/";
-	std::string maskPostfix = "/plugin/pmu_pub/chnl";
-	std::string base = "";
-	std::string cmd = "";
-	std::string ergUnits = "";
+    std::string mask_prefix = "/node/";
+    std::string mask_postfix = "/plugin/pmu_pub/chnl";
+    std::string base = "";
+    std::string cmd = "";
+    std::string erg_units = "";
+
 public:
-	examon_mqtt_path(char* examonHost, char* configChannel)
-	{
-	    base = configChannel + maskPrefix + examonHost + maskPostfix;
-	    cmd = base + "/cmd";
-	    ergUnits = base + "/data/cpu/0/erg_units";
-	}
-	std::string topicBase() { return base; }
-	std::string topicErgUnits() { return ergUnits; }
-	std::string topicCmd() { return cmd; }
-	std::string getDataTopic(std::string subtopic) { return base + "/data/" + subtopic; }
-    bool isErgUnits(char* comparisonTopic)
+    examon_mqtt_path(char* examon_host, char* config_channel)
     {
-    	if(NULL != comparisonTopic && 0 == ergUnits.compare(comparisonTopic))
-    	{
-    		return true;
-    	} else
-    	{
-    		return false;
-    	}
+        base = config_channel + mask_prefix + examon_host + mask_postfix;
+        cmd = base + "/cmd";
+        erg_units = base + "/data/cpu/0/erg_units";
     }
-    bool startsWithTopicBase(char* comparisonTopic)
+    std::string topic_base()
     {
-    	if(NULL != comparisonTopic && 0 == strncmp(comparisonTopic, base.c_str(), base.length()))
-    	{
-    		return true;
-    	} else
-    	{
-    		return false;
-    	}
+        return base;
+    }
+    std::string topic_erg_units()
+    {
+        return erg_units;
+    }
+    std::string topic_cmd()
+    {
+        return cmd;
+    }
+    std::string get_data_topic(std::string subtopic)
+    {
+        return base + "/data/" + subtopic;
+    }
+    bool is_erg_units(char* comparison_topic)
+    {
+        if (NULL != comparison_topic && 0 == erg_units.compare(comparison_topic))
+        {
+            return true;
+        }
+        else
+        {
+            return false;
+        }
+    }
+    bool starts_with_topic_base(char* comparison_topic)
+    {
+        if (NULL != comparison_topic && 0 == strncmp(comparison_topic, base.c_str(), base.length()))
+        {
+            return true;
+        }
+        else
+        {
+            return false;
+        }
     }
 };
-

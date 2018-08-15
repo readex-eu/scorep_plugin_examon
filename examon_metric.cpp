@@ -4,262 +4,281 @@
  *  Created on: 09.08.2018
  *      Author: jitschin
  */
-
-#include <vector>
-#include <utility>
-#include <scorep/chrono/chrono.hpp>
-
-#include <string>
-#include <mosquittopp.h>
-#include "examon_mqtt_path.cpp"
-
-extern "C"
-{
+extern "C" {
 #include <libgen.h>
 #include <string.h>
 }
 
-#include "include_once.hpp"
+#include <mosquittopp.h>
+#include <scorep/chrono/chrono.hpp>
 
+#include <utility>
+#include <vector>
+
+#include "examon_mqtt_path.cpp"
+#include <string>
+
+#include "include_once.hpp"
 
 class examon_metric
 {
 private:
-	std::int32_t metricId;
-	std::string metricName;
-	examon_mqtt_path* channels;
-	std::string metricFullTopic;
-	double metricValue;
+    std::int32_t id;
+    std::string name;
+    examon_mqtt_path* channels;
+    std::string full_topic;
+    double metric_value;
 
-	double metricTimestamp;
-	double metricElapsed;
-	std::int64_t metricIterations;
-	std::int64_t metricTopicCount;
-	double metricAccumulated;
-	std::int64_t metricSubIterations;
-	ACCUMULATION_STRATEGY accStrategy;
-	EXAMON_METRIC_TYPE metricType;
-	double ergUnit;
-	bool gatherData;
-	std::vector<std::pair<scorep::chrono::ticks, double>> gatheredData;
+    double metric_timestamp;
+    double metric_elapsed;
+    std::int64_t metric_iterations;
+    std::int64_t metric_topic_count;
+    double metric_accumulated;
+    std::int64_t metric_sub_iterations;
+    ACCUMULATION_STRATEGY acc_strategy;
+    EXAMON_METRIC_TYPE metric_type;
+    double erg_unit;
+    bool do_gather_data;
+    std::vector<std::pair<scorep::chrono::ticks, double>> gathered_data;
 
-	//DEBUG
-	std::int64_t outputCounter = 0;
+    // DEBUG
+    std::int64_t output_counter = 0;
+
 public:
-
-	void setErgUnit(double paramErgUnit) { ergUnit = paramErgUnit; }
-	std::string getFullTopic() { return metricFullTopic; }
-	std::string getName() { return metricName; }
-	void setGatherData(bool stillGather) { gatherData = stillGather; }
-	examon_metric(std::int32_t id, std::string name, examon_mqtt_path* param_channels, bool param_gather)
+    void set_erg_unit(double param_erg_unit)
     {
-        metricId = id;
-        /* configurable accumulation strategy, TODO: also have a heuristic to determine this setting if not explicitly specified */
-        accStrategy = ACCUMULATION_AVG;
-        int semicolonPos = name.find_first_of(';');
-        if(std::string::npos != semicolonPos)
-        {
-        	accStrategy = parseAccumulationStrategy(name.substr(semicolonPos + 1, std::string::npos));
-        	name = name.substr(0, semicolonPos);
-        }
-        metricName = name;
-        channels = param_channels;
-        metricFullTopic = channels->getDataTopic(name);
-        char* metricBasename = basename((char*) name.c_str());
-        metricType = parseMetricType(metricBasename);
-
-        metricValue = -1.00;
-        metricTimestamp = 0.00;
-        metricElapsed = 0.00;
-        metricIterations = 0;
-        metricTopicCount = 1;
-        metricAccumulated = -1.00;
-        metricSubIterations = 0;
-
-        gatherData = param_gather;
+        erg_unit = param_erg_unit;
     }
-	ACCUMULATION_STRATEGY parseAccumulationStrategy(std::string str)
-	{
-		if(0 == str.compare("avg")
-		|| 0 == str.compare("Avg")
-		|| 0 == str.compare("AVG")
-		|| 0 == str.compare("average")
-		|| 0 == str.compare("Average")
-		|| 0 == str.compare("AVERAGE"))
-		{
-			return ACCUMULATION_AVG;
-		} else
-		if(0 == str.compare("max")
-		|| 0 == str.compare("Max")
-		|| 0 == str.compare("MAX")
-		|| 0 == str.compare("maximum")
-		|| 0 == str.compare("Maximum")
-		|| 0 == str.compare("MAXIMUM"))
-		{
-			return ACCUMULATION_MAX;
-		} else
-		if(0 == str.compare("min")
-		|| 0 == str.compare("Min")
-		|| 0 == str.compare("MIN")
-		|| 0 == str.compare("minimum")
-		|| 0 == str.compare("Minimum")
-		|| 0 == str.compare("MINIMUM"))
-		{
-			return ACCUMULATION_MIN;
-		} else
-		if(0 == str.compare("sum")
-		|| 0 == str.compare("Sum")
-		|| 0 == str.compare("SUM")
-		|| 0 == str.compare("summation")
-		|| 0 == str.compare("Summation")
-		|| 0 == str.compare("SUMMATION"))
-		{
-			return ACCUMULATION_SUM;
-		}
-		return ACCUMULATION_AVG;
-	}
-	bool metricMatches(char* incomingTopic)
-	{
-        bool topicMatches = false;
-		mosqpp::topic_matches_sub(metricFullTopic.c_str(), incomingTopic, &topicMatches);
-		return topicMatches;
-	}
-	void handleMessage(char* incomingTopic, char* incomingPayload, int payloadlen)
-	{
-		double readValue = -1;
-		double readTimestamp = -1;
-		int valuesRead = sscanf( incomingPayload, "%lf;%lf", &readValue, &readTimestamp);
-		if( 2 == valuesRead )
-		{
-			if(readTimestamp != metricTimestamp)
-			{
-				metricElapsed = readTimestamp - metricTimestamp;
+    std::string get_full_topic()
+    {
+        return full_topic;
+    }
+    std::string get_name()
+    {
+        return name;
+    }
+    void set_gather_data(bool param_do_gather)
+    {
+        do_gather_data = param_do_gather;
+    }
+    std::int32_t get_id()
+    {
+        return id;
+    }
+    std::vector<std::pair<scorep::chrono::ticks, double>>* get_gathered_data()
+    {
+        return &gathered_data;
+    }
+    examon_metric(std::int32_t param_id, std::string param_name, examon_mqtt_path* param_channels,
+                  bool param_gather)
+    {
+        id = param_id;
+        /* configurable accumulation strategy, TODO: also have a heuristic to determine this setting
+         * if not explicitly specified */
+        acc_strategy = ACCUMULATION_AVG;
+        int semicolon_pos = param_name.find_first_of(';');
+        if (std::string::npos != semicolon_pos)
+        {
+            acc_strategy =
+                parse_accumulation_strategy(param_name.substr(semicolon_pos + 1, std::string::npos));
+            param_name = param_name.substr(0, semicolon_pos);
+        }
+        name = param_name;
+        channels = param_channels;
+        full_topic = channels->get_data_topic(name);
+        char* metric_basename = basename((char*)name.c_str());
+        metric_type = parse_metric_type(metric_basename);
 
-				metricValue = readValue; // - put value in metricValues
-				++metricIterations;
-				metricSubIterations = 1;
-				if(gatherData)
-				{
-					if(1 < metricIterations && 1 == metricTopicCount)
-					{
-						pushLatestValue(false);
-					}
-				}
-			} else
-			{
-				++metricSubIterations;
-				if(1 == metricIterations)
-				{
-					++metricTopicCount;
-				} else
-				{
-					// TODO: put all this logic in a separate class for the metric
-					//         optional: implement fancy pthread_mutex_locking for it
+        metric_value = -1.00;
+        metric_timestamp = 0.00;
+        metric_elapsed = 0.00;
+        metric_iterations = 0;
+        metric_topic_count = 1;
+        metric_accumulated = -1.00;
+        metric_sub_iterations = 0;
 
+        do_gather_data = param_gather;
+    }
+    ACCUMULATION_STRATEGY parse_accumulation_strategy(std::string str)
+    {
+        if (0 == str.compare("avg") || 0 == str.compare("Avg") || 0 == str.compare("AVG") ||
+            0 == str.compare("average") || 0 == str.compare("Average") ||
+            0 == str.compare("AVERAGE"))
+        {
+            return ACCUMULATION_AVG;
+        }
+        else if (0 == str.compare("max") || 0 == str.compare("Max") || 0 == str.compare("MAX") ||
+                 0 == str.compare("maximum") || 0 == str.compare("Maximum") ||
+                 0 == str.compare("MAXIMUM"))
+        {
+            return ACCUMULATION_MAX;
+        }
+        else if (0 == str.compare("min") || 0 == str.compare("Min") || 0 == str.compare("MIN") ||
+                 0 == str.compare("minimum") || 0 == str.compare("Minimum") ||
+                 0 == str.compare("MINIMUM"))
+        {
+            return ACCUMULATION_MIN;
+        }
+        else if (0 == str.compare("sum") || 0 == str.compare("Sum") || 0 == str.compare("SUM") ||
+                 0 == str.compare("summation") || 0 == str.compare("Summation") ||
+                 0 == str.compare("SUMMATION"))
+        {
+            return ACCUMULATION_SUM;
+        }
+        return ACCUMULATION_AVG;
+    }
+    bool metric_matches(char* incoming_topic)
+    {
+        bool topic_matches = false;
+        mosqpp::topic_matches_sub(full_topic.c_str(), incoming_topic, &topic_matches);
+        return topic_matches;
+    }
+    void handle_message(char* incoming_topic, char* incoming_payload, int payloadlen)
+    {
+        double read_value = -1;
+        double read_timestamp = -1;
+        int values_read = sscanf(incoming_payload, "%lf;%lf", &read_value, &read_timestamp);
+        if (2 == values_read)
+        {
+            if (read_timestamp != metric_timestamp)
+            {
+                metric_elapsed = read_timestamp - metric_timestamp;
 
-					// accumulate strategy
-					// at this point metricTopicCount contains a sensible number of actually
-					//   subscribed to metrics
+                metric_value = read_value; // - put value in metricValues
+                ++metric_iterations;
+                metric_sub_iterations = 1;
+                if (do_gather_data)
+                {
+                    if (1 < metric_iterations && 1 == metric_topic_count)
+                    {
+                        push_latest_value(false);
+                    }
+                }
+            }
+            else
+            {
+                ++metric_sub_iterations;
+                if (1 == metric_iterations)
+                {
+                    ++metric_topic_count;
+                }
+                else
+                {
+                    // TODO: put all this logic in a separate class for the metric
+                    //         optional: implement fancy pthread_mutex_locking for it
 
-					// here is the first duplicate, i.e. timestamps are equal
-					// so the current preceding value was already written to metricValues[i]
-					printf("Applying accumulation strategy %d\n", accStrategy);
-					bool completedCycle = metricSubIterations == metricTopicCount;
-					switch(accStrategy)
-					{
-					case ACCUMULATION_AVG:
-						metricValue += readValue;
-						if(completedCycle)
-						{
-							metricAccumulated = metricValue / metricTopicCount;
-						}
-						break;
-					case ACCUMULATION_SUM:
-						metricValue += readValue;
-						if(completedCycle) metricAccumulated = metricValue;
-						break;
-					case ACCUMULATION_MIN:
-						if(metricValue > readValue) metricValue = readValue;
-						if(completedCycle) metricAccumulated = metricValue;
-						break;
-					case ACCUMULATION_MAX:
-						if(metricValue < readValue) metricValue = readValue;
-						if(completedCycle) metricAccumulated = metricValue;
-						break;
-					}
-					if(completedCycle && gatherData)
-					{
-                        pushLatestValue(true);
-					}
+                    // accumulate strategy
+                    // at this point metricTopicCount contains a sensible number of actually
+                    //   subscribed to metrics
 
-				}
-			}
-			metricTimestamp = readTimestamp;
+                    // here is the first duplicate, i.e. timestamps are equal
+                    // so the current preceding value was already written to metricValues[i]
+                    printf("Applying accumulation strategy %d\n", acc_strategy);
+                    bool completed_cycle = metric_sub_iterations == metric_topic_count;
+                    switch (acc_strategy)
+                    {
+                    case ACCUMULATION_AVG:
+                        metric_value += read_value;
+                        if (completed_cycle)
+                        {
+                            metric_accumulated = metric_value / metric_topic_count;
+                        }
+                        break;
+                    case ACCUMULATION_SUM:
+                        metric_value += read_value;
+                        if (completed_cycle)
+                            metric_accumulated = metric_value;
+                        break;
+                    case ACCUMULATION_MIN:
+                        if (metric_value > read_value)
+                            metric_value = read_value;
+                        if (completed_cycle)
+                            metric_accumulated = metric_value;
+                        break;
+                    case ACCUMULATION_MAX:
+                        if (metric_value < read_value)
+                            metric_value = read_value;
+                        if (completed_cycle)
+                            metric_accumulated = metric_value;
+                        break;
+                    }
+                    if (completed_cycle && do_gather_data)
+                    {
+                        push_latest_value(true);
+                    }
+                }
+            }
+            metric_timestamp = read_timestamp;
 
+            printf("read metric %9s: %0.4lf, Timestamp:%14.6lf\n", name.c_str(), read_value,
+                   read_timestamp);
+        }
+    }
+    bool has_value()
+    {
+        if (1 < metric_iterations)
+        {
+            if (metric_type != EXAMON_METRIC_TYPE::ENERGY || 0 < erg_unit)
+            {
+                if (1 < metric_topic_count)
+                {
+                    return -1.00 != metric_accumulated;
+                }
+                else
+                {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+    double get_latest_value()
+    {
+        double return_value = 0.00;
+        if (1 < metric_topic_count)
+        {
+            return_value = metric_accumulated;
+        }
+        else
+        {
+            return_value = metric_value;
+        }
+        if (metric_type == EXAMON_METRIC_TYPE::ENERGY)
+        {
+            if (0 < erg_unit)
+            {
+                return_value = return_value * erg_unit;
+            }
+        }
+        if (1023 == ((output_counter++) & 1023))
+            printf("metricName(%s), returnValue(%lf), metricTopicCount(%ld), "
+                   "metricAccumulated(%lf), metricValue(%lf), metricElapsed(%lf), ergUnit(%lf)\n",
+                   name.c_str(), return_value, metric_topic_count, metric_accumulated, metric_value,
+                   metric_elapsed, erg_unit);
+        return return_value;
+    }
+    void push_latest_value(bool accumulated)
+    {
+        // std::chrono::system_clock::time_point
+        scorep::chrono::ticks now_ticks = scorep::chrono::measurement_clock::now();
+        double write_metric = 0.00;
+        if (accumulated)
+            write_metric = metric_accumulated;
+        else
+            write_metric = metric_value;
+        if (metric_type == EXAMON_METRIC_TYPE::ENERGY)
+        {
+            if (0 < erg_unit)
+            {
 
-
-			printf("read metric %9s: %0.4lf, Timestamp:%14.6lf\n", metricName.c_str(), readValue, readTimestamp);
-		}
-	}
-	bool hasValue()
-	{
-		if(1 < metricIterations)
-		{
-			if(metricType != EXAMON_METRIC_TYPE::ENERGY || 0 < ergUnit)
-			{
-				if(1 < metricTopicCount)
-				{
-					return -1.00 != metricAccumulated;
-				} else
-				{
-				  return true;
-				}
-			}
-		}
-		return false;
-	}
-	double getLatestValue()
-	{
-		double returnValue = 0.00;
-		if(1 < metricTopicCount)
-		{
-			returnValue = metricAccumulated;
-		} else
-		{
-			returnValue = metricValue;
-		}
-		if(metricType == EXAMON_METRIC_TYPE::ENERGY)
-		{
-			if(0 < ergUnit)
-			{
-    			returnValue = returnValue * ergUnit;
-			}
-		}
-		if(1023 == ((outputCounter++)&1023)) printf("metricName(%s), returnValue(%lf), metricTopicCount(%ld), metricAccumulated(%lf), metricValue(%lf), metricElapsed(%lf), ergUnit(%lf)\n", metricName.c_str(), returnValue, metricTopicCount, metricAccumulated, metricValue, metricElapsed, ergUnit);
-		return returnValue;
-	}
-	void pushLatestValue(bool accumulated)
-	{
-		//std::chrono::system_clock::time_point
-		scorep::chrono::ticks nowTicks = scorep::chrono::measurement_clock::now();
-		double writeMetric = 0.00;
-		if(accumulated) writeMetric = metricAccumulated;
-		else            writeMetric = metricValue;
-		if(metricType == EXAMON_METRIC_TYPE::ENERGY)
-		{
-			if(0 < ergUnit)
-			{
-
-		        gatheredData.push_back(std::pair<scorep::chrono::ticks, double>(nowTicks, writeMetric * ergUnit));
-			}
-		} else
-		{
-			gatheredData.push_back(std::pair<scorep::chrono::ticks, double>(nowTicks, writeMetric));
-		}
-	}
-	std::vector<std::pair<scorep::chrono::ticks, double>>* getGatheredData()
-	{
-        return &gatheredData;
-	}
+                gathered_data.push_back(
+                    std::pair<scorep::chrono::ticks, double>(now_ticks, write_metric * erg_unit));
+            }
+        }
+        else
+        {
+            gathered_data.push_back(
+                std::pair<scorep::chrono::ticks, double>(now_ticks, write_metric));
+        }
+    }
 };
-
