@@ -2,6 +2,14 @@ cmake_minimum_required(VERSION 3.0)
 
 project(examon_plugin)
 
+execute_process(
+  COMMAND 
+    "git" "submodule" "update" "--init" "--recursive"
+  WORKING_DIRECTORY
+  "${CMAKE_SOURCE_DIR}"
+  RESULT_VARIABLE result
+  ERROR_VARIABLE error
+)
 add_subdirectory(extern/scorep_plugin_cxx_wrapper)
 add_subdirectory(extern/mosquitto-1.5)
 
