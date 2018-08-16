@@ -321,11 +321,18 @@ public:
         }
         else
         {
-            char* buf = (char*)malloc(metric_parse.length() + 17);
+            char *buf = (char*)malloc(metric_parse.length() + 17);
             sprintf(buf, "Examon metric \"%s\"", metric_parse.c_str());
             buf[metric_parse.length() + 16] = '\0';
-            char* unit = (char*)"";
+            char *unit = (char*)"";
             EXAMON_METRIC_TYPE metric_type = parse_metric_type((char*)metric_basename.c_str());
+            ACCUMULATION_STRATEGY acc_strategy = ACCUMULATION_AVG;
+            OUTPUT_DATATYPE metric_datatype = OUTPUT_DATATYPE::DOUBLE;
+            int semicolon_pos = metric_basename.find_first_of(';');
+            if (std::string::npos != semicolon_pos)
+            {
+                parse_metric_options(metric_basename.substr(semicolon_pos + 1, std::string::npos).c_str(), acc_strategy, metric_datatype);
+            }
             switch (metric_type)
             {
             case EXAMON_METRIC_TYPE::TEMPERATURE:
@@ -357,7 +364,20 @@ public:
                 prop.accumulated_last();
                 break;
             }
-            prop.value_double();
+            switch(metric_datatype)
+            {
+            case OUTPUT_DATATYPE::DOUBLE:
+                prop.value_double();
+                break;
+            case OUTPUT_DATATYPE::INT32_T:
+            case OUTPUT_DATATYPE::INT64_T:  /* fall-through */
+                prop.value_int();  // Score-P just knows INT64_T
+                break;
+            case OUTPUT_DATATYPE::UINT32_T:
+            case OUTPUT_DATATYPE::UINT64_T:  /* fall-through */
+                prop.value_uint();  // Score-P just knows UINT64_T
+                break;
+            }
             prop.decimal();
             found_matches.push_back(prop);
 
@@ -381,11 +401,10 @@ public:
     /** Will be called for every event in by the measurement environment.
       * You may or may not give it a value here.
       *
-      * @param m contains the stored metric informations
-      * @param proxy get and save the results
+      * @param id contains the stored metric informations
+      * @param p get and save the results
       *
       **/
-    /* get_current_value is the strict variant, value is written to &proxy */
     template <class Proxy>
     bool get_optional_value(std::int32_t id, Proxy& p)
     {
@@ -396,7 +415,20 @@ public:
             {
                 if (metrics[index].has_value())
                 {
-                    p.store(metrics[index].get_latest_value());
+                    switch(metrics[index].get_output_datatype())
+                    {
+                    case OUTPUT_DATATYPE::DOUBLE:
+                        p.store(metrics[index].get_latest_value());
+                        break;
+                    case OUTPUT_DATATYPE::INT32_T:
+                    case OUTPUT_DATATYPE::INT64_T:  /* fall-through */
+                        p.store((std::int64_t) metrics[index].get_latest_value());  // Score-P just knows INT64_T
+                        break;
+                    case OUTPUT_DATATYPE::UINT32_T:
+                    case OUTPUT_DATATYPE::UINT64_T:  /* fall-through */
+                    p.store((std::uint64_t) metrics[index].get_latest_value());  // Score-P just knows UINT64_T
+                        break;
+                    }
                     return true;
                 }
             }

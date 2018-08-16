@@ -325,6 +325,13 @@ public:
             buf[metric_parse.length() + 16] = '\0';
             char* unit = (char*)"";
             EXAMON_METRIC_TYPE metric_type = parse_metric_type((char*)metric_basename.c_str());
+            ACCUMULATION_STRATEGY acc_strategy = ACCUMULATION_AVG;
+            OUTPUT_DATATYPE metric_datatype = OUTPUT_DATATYPE::DOUBLE;
+            int semicolon_pos = metric_basename.find_first_of(';');
+            if (std::string::npos != semicolon_pos)
+            {
+                parse_metric_options(metric_basename.substr(semicolon_pos + 1, std::string::npos).c_str(), acc_strategy, metric_datatype);
+            }
             switch (metric_type)
             {
             case EXAMON_METRIC_TYPE::TEMPERATURE:
@@ -356,7 +363,20 @@ public:
                 prop.accumulated_last();
                 break;
             }
-            prop.value_double();
+            switch(metric_datatype)
+            {
+            case OUTPUT_DATATYPE::DOUBLE:
+                prop.value_double();
+                break;
+            case OUTPUT_DATATYPE::INT32_T:
+            case OUTPUT_DATATYPE::INT64_T:  /* fall-through */
+                prop.value_int();  // Score-P just knows INT64_T
+                break;
+            case OUTPUT_DATATYPE::UINT32_T:
+            case OUTPUT_DATATYPE::UINT64_T:  /* fall-through */
+                prop.value_uint();  // Score-P just knows UINT64_T
+                break;
+            }
             prop.decimal();
             found_matches.push_back(prop);
 
@@ -400,9 +420,24 @@ public:
                 // assert(&((*iter).first) != NULL);
                 // assert((double) (*iter).second);
                 // c.write((*iter).first, (*iter).second);
+                OUTPUT_DATATYPE metric_datatype = metrics[index].get_output_datatype();
                 for (int i = 0; i < values->size(); ++i)
                 {
-                    c.write((*values)[i].first, (*values)[i].second);
+                    switch(metrics[index].get_output_datatype())
+                    {
+                    case OUTPUT_DATATYPE::DOUBLE:
+                        c.write((*values)[i].first, (*values)[i].second);
+                        break;
+                    case OUTPUT_DATATYPE::INT32_T:
+                    case OUTPUT_DATATYPE::INT64_T:  /* fall-through */
+                        c.write((*values)[i].first, (std::int64_t) ((*values)[i].second));  // Score-P just knows INT64_T
+                        break;
+                    case OUTPUT_DATATYPE::UINT32_T:
+                    case OUTPUT_DATATYPE::UINT64_T:  /* fall-through */
+                        c.write((*values)[i].first, (std::uint64_t) ((*values)[i].second));  // Score-P just knows UINT64_T
+                        break;
+                    }
+
                 }
             }
         }

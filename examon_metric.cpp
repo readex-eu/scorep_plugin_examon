@@ -35,13 +35,21 @@ private:
     double metric_accumulated;  /**< the latest accumulated value */
     std::int64_t metric_sub_iterations;  /**< how many values with the same timestamp were just received */
     ACCUMULATION_STRATEGY acc_strategy;  /**< how to add/subtract/calculate the accumulated value */
-    EXAMON_METRIC_TYPE metric_type;  /**< the kind of metric we are treating herein*/
+    EXAMON_METRIC_TYPE metric_type;  /**< the kind of metric we are treating herein */
+    OUTPUT_DATATYPE metric_datatype;  /**< which datatype to report to Score-P */
     double erg_unit;  /**< stored erg_unit with which to multiply the raw erg_* values */
     bool do_gather_data; /**< whether we need to store the received values (e.g. for the async plugin) */
     std::vector<std::pair<scorep::chrono::ticks, double>> gathered_data; /**< stored values */
 
 
 public:
+    /**
+     * returns the output datatype
+     */
+    OUTPUT_DATATYPE get_output_datatype()
+    {
+        return metric_datatype;
+    }
     /**
      * update the erg_unit with which to multiply erg_* units
      */
@@ -100,11 +108,11 @@ public:
         /* configurable accumulation strategy, TODO: also have a heuristic to determine this setting
          * if not explicitly specified */
         acc_strategy = ACCUMULATION_AVG;
+        metric_datatype = OUTPUT_DATATYPE::DOUBLE;
         int semicolon_pos = param_name.find_first_of(';');
         if (std::string::npos != semicolon_pos)
         {
-            acc_strategy =
-                parse_accumulation_strategy(param_name.substr(semicolon_pos + 1, std::string::npos));
+            parse_metric_options(param_name.substr(semicolon_pos + 1, std::string::npos).c_str(), acc_strategy, metric_datatype);
             param_name = param_name.substr(0, semicolon_pos);
         }
         name = param_name;
@@ -260,6 +268,7 @@ public:
                 return_value = return_value * erg_unit;
             }
         }
+
         return return_value;
     }
     /**
