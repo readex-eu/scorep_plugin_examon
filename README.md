@@ -25,6 +25,8 @@ cd build;
 cmake ../
 make
 ```
+### CMake Options
+* ENABLE_MPI (default: OFF)
 
 Running
 -------
@@ -172,7 +174,7 @@ export SCOREP_METRIC_EXAMON_ASYNC_PLUGIN_CHANNEL="foo"
 export SCOREP_METRIC_EXAMON_ASYNC_PLUGIN="core/0/temp"
 ```
 
-**Note** that Examon provides metrics per *cpu socket* and per *core*. E.g. metric `erg_pkg` is only available on a per cpu socket base.
+**Note** that Examon provides metrics per *cpu socket* and per *core*. E.g. metric `erg_pkg` is only available on a per cpu socket basis.
 
 **Note** Metrics which's *basename* begins with `erg` (except erg_units) will trigger this plugin to multiply their output value with the factor [derived from](https://github.com/Quimoniz/scorep_plugin_examon/blob/182ab8a684ce20b19cf4a33ac404990148c726d2/examon_async_plugin.cpp#L251) cpu/0/erg_units to arrive at the correct Joule value.
 
@@ -186,6 +188,11 @@ compare average temperature of all cores with maximum temperature:
 
 look at temperature and energy consumption
 `cpu/+/erg_pkg;AVG,core/+/temp;MAX`
+
+Bugreport
+---------
+I would be thankfull for any bug report.
+
 
 A note on configuring Examon
 ----------------------------

@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.8)
 
 project(examon_plugin)
+option(ENABLE_MPI "Build with MPI support." OFF)
 
 execute_process(
   COMMAND 
@@ -21,6 +22,17 @@ if(SCOREP_FOUND)
     SET(CMAKE_INSTALL_PREFIX ${SCOREP_ROOT_PATH} CACHE PATH "Install path prefix, prepended onto install directories." FORCE)
 else()
     message(SEND_ERROR "Scorep was not found but is required")
+endif()
+
+if (MPI_FOUND AND ENABLE_MPI)
+    add_definitions(-DHAVE_MPI)
+    message(STATUS "Build with MPI support")
+    target_compile_definitions(x86_energy_sync_plugin PRIVATE MPI_VERSION)
+    target_link_libraries(x86_energy_sync_plugin PRIVATE MPI::MPI_C)
+    target_link_libraries(x86_energy_sync_plugin PRIVATE MPI::MPI_CXX)
+    
+elseif (ENABLE_MPI)
+    message(FATAL_ERROR "Can't find MPI. Please provide MPI or unset \"ENABLE_MPI\"")
 endif()
 
 
