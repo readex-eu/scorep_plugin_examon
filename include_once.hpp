@@ -183,10 +183,23 @@ inline struct metric_property_return *preprocess_metric_property(std::string met
     else
     {
         struct metric_property_return* return_pair = new struct metric_property_return();
+        if(0 == metric_parse.compare("EXAMON/BLADE/E"))
+        {
+            if(NULL != getenv("SCOREP_METRIC_EXAMON_SYNC_PLUGIN_READEX_BLADE"))
+            {
+                metric_parse = getenv("SCOREP_METRIC_EXAMON_SYNC_PLUGIN_READEX_BLADE");
+            } else if(NULL != getenv("SCOREP_METRIC_EXAMON_ASYNC_PLUGIN_READEX_BLADE"))
+            {
+                metric_parse = getenv("SCOREP_METRIC_EXAMON_ASYNC_PLUGIN_READEX_BLADE");
+            } else
+            {
+                return NULL;
+            }
+        }
+
         char *buf = (char*)malloc(metric_parse.length() + 17);
         sprintf(buf, "Examon metric \"%s\"", metric_parse.c_str());
         buf[metric_parse.length() + 16] = '\0';
-        char *unit = (char*)"";
         EXAMON_METRIC_TYPE metric_type = parse_metric_type((char*)metric_basename.c_str());
         ACCUMULATION_STRATEGY acc_strategy = ACCUMULATION_AVG;
         OUTPUT_DATATYPE metric_datatype = OUTPUT_DATATYPE::DOUBLE;
@@ -196,22 +209,54 @@ inline struct metric_property_return *preprocess_metric_property(std::string met
         {
             parse_metric_options(metric_basename.substr(semicolon_pos + 1, std::string::npos).c_str(), acc_strategy, metric_datatype, scale_mul);
         }
+        std::string unit = "";
+        if(1000000000000 == scale_mul)
+        {
+            unit = "T";
+        } else if(1000000000 == scale_mul)
+        {
+            unit = "G";
+        } else if(1000000 == scale_mul)
+        {
+            unit = "M";
+        } else if(1000 == scale_mul)
+        {
+            unit = "K";
+        } else if(1 == scale_mul)
+        {
+            unit = "";
+        } else if(0.001 == scale_mul)
+        {
+            unit = "m";
+        } else if(0.000001 == scale_mul)
+        {
+            unit = "µ";
+        } else if(0.000000001 == scale_mul)
+        {
+            unit = "n";
+        } else if(0.000000000001 == scale_mul)
+        {
+            unit = "p";
+        } else {
+            unit = std::to_string(scale_mul) + " ";
+        }
 
         switch (metric_type)
         {
         case EXAMON_METRIC_TYPE::TEMPERATURE:
-            unit = (char*)"C";
+            unit += "C";
             break;
         case EXAMON_METRIC_TYPE::ENERGY:
-            unit = (char*)"J";
+            unit += "J";
             break;
         case EXAMON_METRIC_TYPE::FREQUENCY:
-            unit = (char*)"Hz";
+            unit += "Hz";
             break;
+
         }
 
         scorep::plugin::metric_property* prop =
-            new scorep::plugin::metric_property(metric_parse, buf, unit);
+            new scorep::plugin::metric_property(metric_parse, buf, unit.c_str());
 
 
         switch(metric_datatype)
