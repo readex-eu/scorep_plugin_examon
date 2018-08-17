@@ -39,6 +39,8 @@ extern "C" {
 }
 
 #include <string>
+#include <utility>
+#include <scorep/plugin/plugin.hpp>
 
 /* TODO: make this an enum class */
 /**
@@ -59,90 +61,6 @@ enum class OUTPUT_DATATYPE
     INT64_T,
     UINT64_T
 };
-/**
- * Parse a simple 3 letter abbreviation of an accumulation strategy
- */
-inline ACCUMULATION_STRATEGY parse_accumulation_strategy(std::string str)
-{
-    if (0 == str.compare("avg") || 0 == str.compare("Avg") || 0 == str.compare("AVG") ||
-        0 == str.compare("average") || 0 == str.compare("Average") ||
-        0 == str.compare("AVERAGE"))
-    {
-        return ACCUMULATION_AVG;
-    }
-    else if (0 == str.compare("max") || 0 == str.compare("Max") || 0 == str.compare("MAX") ||
-             0 == str.compare("maximum") || 0 == str.compare("Maximum") ||
-             0 == str.compare("MAXIMUM"))
-    {
-        return ACCUMULATION_MAX;
-    }
-    else if (0 == str.compare("min") || 0 == str.compare("Min") || 0 == str.compare("MIN") ||
-             0 == str.compare("minimum") || 0 == str.compare("Minimum") ||
-             0 == str.compare("MINIMUM"))
-    {
-        return ACCUMULATION_MIN;
-    }
-    else if (0 == str.compare("sum") || 0 == str.compare("Sum") || 0 == str.compare("SUM") ||
-             0 == str.compare("summation") || 0 == str.compare("Summation") ||
-             0 == str.compare("SUMMATION"))
-    {
-        return ACCUMULATION_SUM;
-    }
-    return ACCUMULATION_AVG;
-}
-
-inline bool in_list(std::string comparison_str, ...)
-{
-    va_list ap;
-    va_start(ap, comparison_str);
-    char * cur = va_arg(ap, char*);
-    while(NULL != cur)
-    {
-        if(0 == comparison_str.compare(cur))
-        {
-            return true;
-        }
-        cur = va_arg(ap, char*);
-    }
-    va_end(ap);
-    return false;
-}
-
-inline int parse_metric_options(const char *metric_parameters, ACCUMULATION_STRATEGY &acc_strategy, OUTPUT_DATATYPE &out_datatype)
-{
-    if(NULL == metric_parameters)
-    {
-        return -1;
-    }
-    char *cur_token = NULL;
-    char *saveptr = NULL;
-    cur_token = strtok_r((char*) metric_parameters, ";", &saveptr);
-    while(NULL != cur_token)
-    {
-        if(in_list(cur_token, "avg", "AVG", "average", "AVERAGE", NULL))
-            acc_strategy = ACCUMULATION_AVG;
-        else if(in_list(cur_token, "min", "MIN", "minimum", "MINIMUM", NULL))
-            acc_strategy = ACCUMULATION_MIN;
-        else if(in_list(cur_token, "max", "MAX", "maximum", "MAXIMUM", NULL))
-            acc_strategy = ACCUMULATION_MAX;
-        else if(in_list(cur_token, "sum", "SUM", "summation", "SUMMATION", NULL))
-            acc_strategy = ACCUMULATION_SUM;
-        else if(in_list(cur_token, "double", "DOUBLE", NULL))
-            out_datatype = OUTPUT_DATATYPE::DOUBLE;
-        else if(in_list(cur_token, "int32", "int32_t", "INT32", "INT32_T", NULL))
-            out_datatype = OUTPUT_DATATYPE::INT32_T;
-        else if(in_list(cur_token, "uint32", "uint32_t", "UINT32", "UINT32_T", NULL))
-            out_datatype = OUTPUT_DATATYPE::UINT32_T;
-        else if(in_list(cur_token, "int64", "int64_t", "INT64", "INT64_T", NULL))
-            out_datatype = OUTPUT_DATATYPE::INT64_T;
-        else if(in_list(cur_token, "uint64", "uint64_t", "UINT64", "UINT64_T", NULL))
-            out_datatype = OUTPUT_DATATYPE::UINT64_T;
-        cur_token = strtok_r(NULL, (char*) ";",  &saveptr);
-    }
-
-    return 0;
-}
-
 /**
  * Tell which kind of metric we might be dealing with
  */
@@ -178,5 +96,150 @@ inline EXAMON_METRIC_TYPE parse_metric_type(char* metric_basename)
 
     return metric_type;
 }
+
+
+inline bool in_list(std::string comparison_str, ...)
+{
+    va_list ap;
+    va_start(ap, comparison_str);
+    char * cur = va_arg(ap, char*);
+    while(NULL != cur)
+    {
+        if(0 == comparison_str.compare(cur))
+        {
+            return true;
+        }
+        cur = va_arg(ap, char*);
+    }
+    va_end(ap);
+    return false;
+}
+
+inline int parse_metric_options(const char *metric_parameters, ACCUMULATION_STRATEGY &acc_strategy, OUTPUT_DATATYPE &out_datatype, double &scale_mul)
+{
+    if(NULL == metric_parameters)
+    {
+        return -1;
+    }
+    char *cur_token = NULL;
+    char *saveptr = NULL;
+    cur_token = strtok_r((char*) metric_parameters, ";", &saveptr);
+    while(NULL != cur_token)
+    {
+        if(in_list(cur_token, "avg", "AVG", "average", "AVERAGE", NULL))
+            acc_strategy = ACCUMULATION_AVG;
+        else if(in_list(cur_token, "min", "MIN", "minimum", "MINIMUM", NULL))
+            acc_strategy = ACCUMULATION_MIN;
+        else if(in_list(cur_token, "max", "MAX", "maximum", "MAXIMUM", NULL))
+            acc_strategy = ACCUMULATION_MAX;
+        else if(in_list(cur_token, "sum", "SUM", "summation", "SUMMATION", NULL))
+            acc_strategy = ACCUMULATION_SUM;
+        else if(in_list(cur_token, "double", "DOUBLE", NULL))
+            out_datatype = OUTPUT_DATATYPE::DOUBLE;
+        else if(in_list(cur_token, "int32", "int32_t", "INT32", "INT32_T", NULL))
+            out_datatype = OUTPUT_DATATYPE::INT32_T;
+        else if(in_list(cur_token, "uint32", "uint32_t", "UINT32", "UINT32_T", NULL))
+            out_datatype = OUTPUT_DATATYPE::UINT32_T;
+        else if(in_list(cur_token, "int64", "int64_t", "INT64", "INT64_T", NULL))
+            out_datatype = OUTPUT_DATATYPE::INT64_T;
+        else if(in_list(cur_token, "uint64", "uint64_t", "UINT64", "UINT64_T", NULL))
+            out_datatype = OUTPUT_DATATYPE::UINT64_T;
+        else if(0 == strncmp(cur_token, "s=", 2) || 0 == strncmp(cur_token, "S=", 2))
+            sscanf(cur_token + 2, "%lf", &scale_mul);
+        cur_token = strtok_r(NULL, (char*) ";",  &saveptr);
+    }
+
+    return 0;
+}
+
+/**
+ * actually this is a replacement for std::pair
+ *
+ * since unfortunately std::pair was not capable of holding values
+ * that don't have a default constructor with zero arguments
+ */
+struct metric_property_return
+{
+public:
+    scorep::plugin::metric_property* props = NULL;
+    EXAMON_METRIC_TYPE metric_type;
+    metric_property_return()
+    {
+    }
+};
+
+
+inline struct metric_property_return *preprocess_metric_property(std::string metric_parse)
+{
+    std::string metric_basename = basename((char*)metric_parse.c_str());
+    if (NULL != strchr(metric_basename.c_str(), '+') ||
+        NULL != strchr(metric_basename.c_str(), '#'))
+    {
+        fprintf(stderr, "Can't allow metric \"%s\", don't know how to accumulate it. Only "
+                        "homogenetic path endings allowed.\n",
+                metric_basename.c_str());
+        return NULL;
+    }
+    else
+    {
+        struct metric_property_return* return_pair = new struct metric_property_return();
+        char *buf = (char*)malloc(metric_parse.length() + 17);
+        sprintf(buf, "Examon metric \"%s\"", metric_parse.c_str());
+        buf[metric_parse.length() + 16] = '\0';
+        char *unit = (char*)"";
+        EXAMON_METRIC_TYPE metric_type = parse_metric_type((char*)metric_basename.c_str());
+        ACCUMULATION_STRATEGY acc_strategy = ACCUMULATION_AVG;
+        OUTPUT_DATATYPE metric_datatype = OUTPUT_DATATYPE::DOUBLE;
+        double scale_mul = 1.00;
+        int semicolon_pos = metric_basename.find_first_of(';');
+        if (std::string::npos != semicolon_pos)
+        {
+            parse_metric_options(metric_basename.substr(semicolon_pos + 1, std::string::npos).c_str(), acc_strategy, metric_datatype, scale_mul);
+        }
+
+        switch (metric_type)
+        {
+        case EXAMON_METRIC_TYPE::TEMPERATURE:
+            unit = (char*)"C";
+            break;
+        case EXAMON_METRIC_TYPE::ENERGY:
+            unit = (char*)"J";
+            break;
+        case EXAMON_METRIC_TYPE::FREQUENCY:
+            unit = (char*)"Hz";
+            break;
+        }
+
+        scorep::plugin::metric_property* prop =
+            new scorep::plugin::metric_property(metric_parse, buf, unit);
+
+
+        switch(metric_datatype)
+        {
+        case OUTPUT_DATATYPE::DOUBLE:
+            prop->value_double();
+            break;
+        case OUTPUT_DATATYPE::INT32_T:
+        case OUTPUT_DATATYPE::INT64_T:  /* fall-through */
+            prop->value_int();  // Score-P just knows INT64_T
+            break;
+        case OUTPUT_DATATYPE::UINT32_T:
+        case OUTPUT_DATATYPE::UINT64_T:  /* fall-through */
+            prop->value_uint();  // Score-P just knows UINT64_T
+            break;
+        }
+        prop->decimal();
+
+        return_pair->props = prop;
+        return_pair->metric_type = metric_type;
+        //should not be freed here
+        //free(buf);
+
+        return return_pair;
+    }
+}
+
+
+
 
 #endif /* INCLUDE_ONCE_HPP_ */

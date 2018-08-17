@@ -33,7 +33,6 @@
 /* #include </usr/include/c++/5/string> */
 #include <scorep/chrono/chrono.hpp>
 #include <string>
-#include <utility>
 #include <vector>
 /* very basic plugin base */
 #include <scorep/plugin/plugin.hpp>
@@ -294,6 +293,7 @@ public:
     std::vector<scorep::plugin::metric_property>
     get_metric_properties(const std::string& metric_parse)
     {
+
         /* some cpu metrics:
          * tsc, temp_pkg, erg_dram, erg_cores, erg_pkg, erg_units, freq_ref, C2, C3, C6, uclk
          * some core metrics:
@@ -309,81 +309,29 @@ public:
         // revoke paths like cpu/0/+
         //                or cpu/+/+
         //                or +/+/+
-        std::string metric_basename = basename((char*)metric_parse.c_str());
-        if (NULL != strchr(metric_basename.c_str(), '+') ||
-            NULL != strchr(metric_basename.c_str(), '#'))
-        {
-            fprintf(stderr, "Can't allow metric \"%s\", don't know how to accumulate it. Only "
-                            "homogenetic path endings allowed.\n",
-                    metric_basename.c_str());
-            return found_matches;
-        }
-        else
-        {
-            char* buf = (char*)malloc(metric_parse.length() + 17);
-            sprintf(buf, "Examon metric \"%s\"", metric_parse.c_str());
-            buf[metric_parse.length() + 16] = '\0';
-            char* unit = (char*)"";
-            EXAMON_METRIC_TYPE metric_type = parse_metric_type((char*)metric_basename.c_str());
-            ACCUMULATION_STRATEGY acc_strategy = ACCUMULATION_AVG;
-            OUTPUT_DATATYPE metric_datatype = OUTPUT_DATATYPE::DOUBLE;
-            int semicolon_pos = metric_basename.find_first_of(';');
-            if (std::string::npos != semicolon_pos)
-            {
-                parse_metric_options(metric_basename.substr(semicolon_pos + 1, std::string::npos).c_str(), acc_strategy, metric_datatype);
-            }
-            switch (metric_type)
+        struct metric_property_return *parsed_pair = preprocess_metric_property(metric_parse);
+        if(NULL != parsed_pair) {
+            switch (parsed_pair->metric_type)
             {
             case EXAMON_METRIC_TYPE::TEMPERATURE:
-                unit = (char*)"C";
+                parsed_pair->props->absolute_point();
                 break;
             case EXAMON_METRIC_TYPE::ENERGY:
+                parsed_pair->props->accumulated_start();
                 track_erg_unit = true;
-                unit = (char*)"J";
                 break;
             case EXAMON_METRIC_TYPE::FREQUENCY:
-                unit = (char*)"Hz";
-                break;
-            }
-
-            scorep::plugin::metric_property prop =
-                scorep::plugin::metric_property(metric_parse, buf, unit);
-            switch (metric_type)
-            {
-            case EXAMON_METRIC_TYPE::TEMPERATURE:
-                prop.absolute_point();
-                break;
-            case EXAMON_METRIC_TYPE::ENERGY:
-                prop.accumulated_start();
-                break;
-            case EXAMON_METRIC_TYPE::FREQUENCY:
-                prop.absolute_last();
+                parsed_pair->props->absolute_last();
                 break;
             case EXAMON_METRIC_TYPE::UNKNOWN:
-                prop.accumulated_last();
+                parsed_pair->props->accumulated_last();
                 break;
             }
-            switch(metric_datatype)
-            {
-            case OUTPUT_DATATYPE::DOUBLE:
-                prop.value_double();
-                break;
-            case OUTPUT_DATATYPE::INT32_T:
-            case OUTPUT_DATATYPE::INT64_T:  /* fall-through */
-                prop.value_int();  // Score-P just knows INT64_T
-                break;
-            case OUTPUT_DATATYPE::UINT32_T:
-            case OUTPUT_DATATYPE::UINT64_T:  /* fall-through */
-                prop.value_uint();  // Score-P just knows UINT64_T
-                break;
-            }
-            prop.decimal();
-            found_matches.push_back(prop);
+            found_matches.push_back(*(parsed_pair->props));
 
-            free(buf);
-
-            return found_matches;
+            delete parsed_pair;
         }
+        return found_matches;
     }
     /**
      * Receives the desired metrics from Score-P

@@ -97,9 +97,10 @@ parameter = <metric-specification> [',' <metric-specification> ...]
 metric-specification = <path> '/' <basename> [';' <option> ...]
 path = any character except ','
 basename = any character except ',' '/' or ';'
-option = <accumulation-strategy> | <output-datatype>
+option = <accumulation-strategy> | <output-datatype> | <scaling_multiplicator>
 accumulation-strategy = 'MIN' | 'MAX' | 'AVG' | 'SUM'
 output-datatype = 'DOUBLE' | 'INT32' | 'UINT32' | 'INT64' | 'UINT64'
+scaling_multiplicator = 's=' <floating point number>
 ```
 
 **NOTE** when specifying multiple *accumulation-strategy* or *output-datatype* options on a single *metric-specification* the last one applies. E.g. `cpu/+/erg_dram;SUM;MAX;AVG;MIN;UINT64;INT32;DOUBLE` would be accumulated using the `MIN` strategy, and be reported as a `double` value to Score-P.

@@ -58,6 +58,7 @@ private:
     std::int64_t metric_iterations;  /**< how many values were read in total of this metric */
     std::int64_t metric_topic_count;  /**< how many values were read with the same Timestamp at the beginning of measurement */
     double metric_accumulated;  /**< the latest accumulated value */
+    double scale_mul = 1.00; /**< multiplicator to scale the result */
     std::int64_t metric_sub_iterations;  /**< how many values with the same timestamp were just received */
     ACCUMULATION_STRATEGY acc_strategy;  /**< how to add/subtract/calculate the accumulated value */
     EXAMON_METRIC_TYPE metric_type;  /**< the kind of metric we are treating herein */
@@ -137,7 +138,7 @@ public:
         int semicolon_pos = param_name.find_first_of(';');
         if (std::string::npos != semicolon_pos)
         {
-            parse_metric_options(param_name.substr(semicolon_pos + 1, std::string::npos).c_str(), acc_strategy, metric_datatype);
+            parse_metric_options(param_name.substr(semicolon_pos + 1, std::string::npos).c_str(), acc_strategy, metric_datatype, scale_mul);
             param_name = param_name.substr(0, semicolon_pos);
         }
         name = param_name;
@@ -294,7 +295,7 @@ public:
             }
         }
 
-        return return_value;
+        return return_value * scale_mul;
     }
     /**
      * internally used for when a value is to be quickly stored
@@ -314,13 +315,13 @@ public:
             {
 
                 gathered_data.push_back(
-                    std::pair<scorep::chrono::ticks, double>(now_ticks, write_metric * erg_unit));
+                    std::pair<scorep::chrono::ticks, double>(now_ticks, write_metric * erg_unit * scale_mul));
             }
         }
         else
         {
             gathered_data.push_back(
-                std::pair<scorep::chrono::ticks, double>(now_ticks, write_metric));
+                std::pair<scorep::chrono::ticks, double>(now_ticks, write_metric * scale_mul));
         }
     }
 };
