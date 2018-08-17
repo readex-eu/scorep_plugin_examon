@@ -212,31 +212,31 @@ inline struct metric_property_return *preprocess_metric_property(std::string met
         std::string unit = "";
         if(1000000000000 == scale_mul)
         {
-            unit = "T";
+            unit = "p";
         } else if(1000000000 == scale_mul)
         {
-            unit = "G";
+            unit = "n";
         } else if(1000000 == scale_mul)
         {
-            unit = "M";
+            unit = "µ";
         } else if(1000 == scale_mul)
         {
-            unit = "K";
+            unit = "m";
         } else if(1 == scale_mul)
         {
             unit = "";
         } else if(0.001 == scale_mul)
         {
-            unit = "m";
+            unit = "K";
         } else if(0.000001 == scale_mul)
         {
-            unit = "µ";
+            unit = "M";
         } else if(0.000000001 == scale_mul)
         {
-            unit = "n";
+            unit = "G";
         } else if(0.000000000001 == scale_mul)
         {
-            unit = "p";
+            unit = "T";
         } else {
             unit = std::to_string(scale_mul) + " ";
         }
