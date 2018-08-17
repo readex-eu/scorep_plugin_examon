@@ -5,6 +5,8 @@ Connects to EXAMON via MQTT and reads out tsc data to figure out how many Joules
 Dependencies
 ------------
 * **[Score-P](https://www.vi-hps.org/projects/score-p/)**
+* [CMake](https://cmake.org/) version 3.8 or higher
+* make
 * some server on which [EXAMON](https://github.com/EEESlab/examon) is running 
 * some server on which [mosquitto](https://mosquitto.org/)(i.e. a MQTT-Broker) is running, see [this launchpad](https://launchpad.net/~mosquitto-dev/+archive/ubuntu/mosquitto-ppa) if you want a more recent version to run on an Ubuntu
 
@@ -16,7 +18,7 @@ BSD-3
 
 Building
 --------
-use CMake:
+Use CMake:
 ```
 mkdir build
 cd build;
@@ -57,7 +59,7 @@ In case you don't have scorep, mosquitto and examon running on the same system y
         <td>SCOREP_METRIC_EXAMON_ASYNC_PLUGIN_CHANNEL / SCOREP_METRIC_EXAMON_SYNC_PLUGIN_CHANNEL</td><td>org/antarex/cluster/testcluster</td><td>the default channel configured in examon's `pmu_pub.conf` key `topic`</td>
     </tr>
     <tr>
-        <td>SCOREP_METRIC_EXAMON_ASYNC_PLUGIN_INTERVAL / SCOREP_METRIC_EXAMON_SYNC_PLUGIN_INTERVAL</td><td><i>none</i></td><td>used to tell examon via command channel to adapt this delay between readouts, unit: seconds</td>
+        <td>SCOREP_METRIC_EXAMON_ASYNC_PLUGIN_INTERVAL / SCOREP_METRIC_EXAMON_SYNC_PLUGIN_INTERVAL</td><td><i>none</i></td><td>used to tell examon via command channel to adapt this delay between readouts, unit: seconds (you may specify a floating point number)</td>
     </tr>
 </table>
 
@@ -84,7 +86,8 @@ The above shell code should run your program and produce a trace, which you then
 
 Metric Syntax
 -------------
-Look at the example above, which uses MQTT topics with cpu and core, like  `cpu/0/tsc` and `core/+/temp;MAX`.
+Using either `SCOREP_METRIC_EXAMON_SYNC_PLUGIN` or `SCOREP_METRIC_EXAMON_ASYNC_PLUGIN` you can specify the metrics you want this plugin to report from examon.  For an example look ath the bash code above, which uses MQTT topics with cpu and core, like  `cpu/0/tsc` and `core/+/temp;MAX`.
+
 
 ### Structure
 ```
@@ -96,6 +99,8 @@ option = <accumulation-strategy> | <output-datatype>
 accumulation-strategy = 'MIN' | 'MAX' | 'AVG' | 'SUM'
 output-datatype = 'DOUBLE' | 'INT32' | 'UINT32' | 'INT64' | 'UINT64'
 ```
+
+**NOTE** when specifying multiple *accumulation-strategy* or *output-datatype* options on a single *metric-specification* the last one applies. E.g. `cpu/+/erg_dram;SUM;MAX;AVG;MIN;UINT64;INT32;DOUBLE` would be accumulated using the `MIN` strategy, and be reported as a `double` value to Score-P.
 
 ### Using Wildcards
 MQTT understands wildcards in the *path*. `+` for any amount of characters excluding `/`. `#` for any amount of characters.
@@ -151,36 +156,61 @@ org/antarex/cluster/testcluster/node/mabus/plugin/pmu_pub/chnl/data/core/0/IDQ_U
 org/antarex/cluster/testcluster/node/mabus/plugin/pmu_pub/chnl/data/core/0/INT_MISC.RECOVERY_CYCLES 5726500245551;1534429383.000
 org/antarex/cluster/testcluster/node/mabus/plugin/pmu_pub/chnl/data/core/1/tsc 6514034410435230;1534429383.000
 org/antarex/cluster/testcluster/node/mabus/plugin/pmu_pub/chnl/data/core/1/temp 29;1534429383.000
-org/antarex/cluster/testcluster/node/mabus/plugin/pmu_pub/chnl/data/core/1/instr 1589895584919;1534429383.000
-org/antarex/cluster/testcluster/node/mabus/plugin/pmu_pub/chnl/data/core/1/clk_curr 3615841871577;1534429383.000
-org/antarex/cluster/testcluster/node/mabus/plugin/pmu_pub/chnl/data/core/1/clk_ref 3674617169822;1534429383.000
-org/antarex/cluster/testcluster/node/mabus/plugin/pmu_pub/chnl/data/core/1/C3 531797193722;1534429383.000
-org/antarex/cluster/testcluster/node/mabus/plugin/pmu_pub/chnl/data/core/1/C6 116814376844;1534429383.000
-org/antarex/cluster/testcluster/node/mabus/plugin/pmu_pub/chnl/data/core/1/aperf 4424887717554;1534429383.000
-org/antarex/cluster/testcluster/node/mabus/plugin/pmu_pub/chnl/data/core/1/mperf 4514209121473;1534429383.000
-org/antarex/cluster/testcluster/node/mabus/plugin/pmu_pub/chnl/data/core/1/UOPS_RETIRED.RETIRE_SLOTS 140737566371814;1534429383.000
-org/antarex/cluster/testcluster/node/mabus/plugin/pmu_pub/chnl/data/core/1/ICACHE.MISSES 140737488409804;1534429383.000
-org/antarex/cluster/testcluster/node/mabus/plugin/pmu_pub/chnl/data/core/1/LONGEST_LAT_CACHE.MISS 140737489096614;1534429383.000
-org/antarex/cluster/testcluster/node/mabus/plugin/pmu_pub/chnl/data/core/1/MEM_LOAD_UOPS_L3_HIT_RETIRED.XSNP_NONE 4514209121473;1534429383.000
-org/antarex/cluster/testcluster/node/mabus/plugin/pmu_pub/chnl/data/core/1/BR_MISP_RETIRED.ALL_BRANCHES 4514209121473;1534429383.000
-org/antarex/cluster/testcluster/node/mabus/plugin/pmu_pub/chnl/data/core/1/UOPS_ISSUED.ANY 4514209121473;1534429383.000
-org/antarex/cluster/testcluster/node/mabus/plugin/pmu_pub/chnl/data/core/1/IDQ_UOPS_NOT_DELIVERED.CORE 4514209121473;1534429383.000
-org/antarex/cluster/testcluster/node/mabus/plugin/pmu_pub/chnl/data/core/1/INT_MISC.RECOVERY_CYCLES 4514209121473;1534429383.000
-org/antarex/cluster/testcluster/node/mabus/plugin/pmu_pub/chnl/data/core/2/tsc 6514034410521054;1534429383.000
-org/antarex/cluster/testcluster/node/mabus/plugin/pmu_pub/chnl/data/core/2/temp 26;1534429383.000
-org/antarex/cluster/testcluster/node/mabus/plugin/pmu_pub/chnl/data/core/2/instr 948329172612;1534429383.000
-org/antarex/cluster/testcluster/node/mabus/plugin/pmu_pub/chnl/data/core/2/clk_curr 3437216132129;1534429383.000
 ...
 ```
-This plugin will assemble the data path using the following variables:
+This plugin will assemble the data path using the following schema (use `SYNC` or `ASYNC` in the variable name depending on which you are using):
+```
 *SCOREP_METRIC_EXAMON_ASYNC_PLUGIN_CHANNEL* '/node/' *SCOREP_METRIC_EXAMON_ASYNC_PLUGIN_EXAMON_HOST* '/plugin/pmu_pub/chnl/data/'
-
+```
 To which your specified path will be appended. The resulting string will be used in an invocation of MQTT's subscribe() to receive metric values from Examon/MQTT.
 
-TODO: difference between cpu/ path and core/ path
+Thus, if you would want to listen to `foo/node/supercomputer/plugin/pmu_pub/chnl/data/core/0/temp`, you might specify the following environment variables:
+```
+export SCOREP_METRIC_PLUGINS="examon_async_plugin"
+export SCOREP_METRIC_EXAMON_ASYNC_PLUGIN_EXAMON_HOST="supercomputer"
+export SCOREP_METRIC_EXAMON_ASYNC_PLUGIN_CHANNEL="foo"
+export SCOREP_METRIC_EXAMON_ASYNC_PLUGIN="core/0/temp"
+```
+
+**Note** that Examon provides metrics per *cpu socket* and per *core*. E.g. metric `erg_pkg` is only available on a per cpu socket base.
+
+**Note** Metrics which's *basename* begins with `erg` (except erg_units) will trigger this plugin to multiply their output value with the factor [derived from](https://github.com/Quimoniz/scorep_plugin_examon/blob/182ab8a684ce20b19cf4a33ac404990148c726d2/examon_async_plugin.cpp#L251) cpu/0/erg_units to arrive at the correct Joule value.
+
 
 ### Examples
-list a lot of cpu metrics
-cpu/0/erg_pkg,cpu/0/erg_dram,cpu/0/tsc,cpu/0/temp_pkg,cpu/0/erg_cores,cpu/0/freq_ref,cpu/0/C2,cpu/0/C3,cpu/0/C6,cpu/0/uclk
+list a lot of metrics from cpu socket 0
+`cpu/0/erg_pkg,cpu/0/erg_dram,cpu/0/tsc,cpu/0/temp_pkg,cpu/0/erg_cores,cpu/0/freq_ref,cpu/0/C2,cpu/0/C3,cpu/0/C6,cpu/0/uclk`
 
-TODO: elaborate a few more examples
+compare average temperature of all cores with maximum temperature:
+`core/+/temp;AVG,core/+/temp;MAX`
+
+look at temperature and energy consumption
+`cpu/+/erg_pkg;AVG,core/+/temp;MAX`
+
+A note on configuring Examon
+----------------------------
+Example host_whitelist (replace the last name with the name from `/etc/hostname`)
+```
+[BROKER:] 127.0.0.1 1883
+HOSTNAME_OF_THE_SYSTEM_EXAMON_IS_RUNNING_ON
+```
+
+Excerpt from pmu_pub.conf
+```
+[MQTT]
+brokerHost = 127.0.0.1
+brokerPort = 1883
+topic = org/antarex/cluster/testcluster
+qos = 0
+
+[Daemon]
+dT = 1
+daemonize = False
+...
+```
+Wherein `dT` may be a floating point denoting the delay between readouts of RAPL/MSR
+
+**Note** I could not get Examon running with daemonization, therefore `daemonize` is disabled in my configuration.
+
+**Note** On Kernels since Version 4 (April 2015) it is necessary to [enable RDPMC](https://github.com/EEESlab/examon#enable-rdpmc-instruction-in-kernels-4x), otherwise there is a segfault.
+
